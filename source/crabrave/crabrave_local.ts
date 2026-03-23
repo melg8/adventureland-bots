@@ -13,11 +13,6 @@ import { RespawnStrategy } from "../strategy_pattern/strategies/respawn.js"
 import { GiveRogueSpeedStrategy } from "../strategy_pattern/strategies/rspeed.js"
 import { SellStrategy } from "../strategy_pattern/strategies/sell.js"
 
-import bodyParser from "body-parser"
-import cors from "cors"
-import express from "express"
-import path from "path"
-import { body, validationResult } from "express-validator"
 import { MageAttackStrategy } from "../strategy_pattern/strategies/attack_mage.js"
 import { PaladinAttackStrategy } from "../strategy_pattern/strategies/attack_paladin.js"
 import { PriestAttackStrategy } from "../strategy_pattern/strategies/attack_priest.js"
@@ -31,10 +26,81 @@ import { DEFAULT_IDENTIFIER, DEFAULT_REGION } from "../base/defaults.js"
 import { AvoidDeathStrategy } from "../strategy_pattern/strategies/avoid_death.js"
 import { ItemConfig } from "../base/itemsNew.js"
 
+// ============== CONFIGURATION ==============
 
-AL.Game.setServer("http://127.0.0.1:8090")
-await Promise.all([AL.Game.loginJSONFile("../../credentials.json", false), AL.Game.getGData(true)])
-await AL.Pathfinder.prepare(AL.Game.G, { cheat: true })
+/**
+ * ============================================================================
+ * HOW TO GET YOUR CREDENTIALS (user_id and user_auth)
+ * ============================================================================
+ * 
+ * 1. Log into Adventure Land with the account you want to get credentials for
+ * 
+ * 2. Open the code editor in-game (press 'J' or click the code icon)
+ * 
+ * 3. Paste and run this code:
+ * 
+ *    console.log("user_id:", parent.user_id)
+ *    console.log("user_auth:", parent.user_auth)
+ * 
+ * 4. Open your browser's developer console (F12)
+ * 
+ * 5. Copy the values from the console output
+ * 
+ * 6. Paste them into the ACCOUNTS section below
+ * 
+ * ============================================================================
+ */
+
+/**
+ * Account credentials - add as many accounts as needed
+ * Replace the placeholder values with your actual credentials
+ */
+const ACCOUNTS = {
+    leeroi2: {
+        userID: "YOUR_LEEROI2_USER_ID",      // 16 digits - Get from in-game console
+        userAuth: "YOUR_LEEROI2_AUTH_CODE",  // 21 characters - Get from in-game console
+    },
+    leeroi3: {
+        userID: "YOUR_LEEROI3_USER_ID",      // 16 digits - Get from in-game console
+        userAuth: "YOUR_LEEROI3_AUTH_CODE",  // 21 characters - Get from in-game console
+    },
+}
+
+/**
+ * Character configuration
+ * - enabled: true/false to enable/disable the character
+ * - account: key name from ACCOUNTS object
+ * - name: character name in-game
+ * - type: character class
+ * - isPartyLeader: true for the main character others will party to
+ */
+const CHARACTERS: {
+    enabled: boolean
+    account: keyof typeof ACCOUNTS
+    name: string
+    type: CharacterType
+    isPartyLeader?: boolean
+}[] = [
+    // Account: leeroi2
+    { enabled: true, account: "leeroi2", name: "Lucky2", type: "mage", isPartyLeader: true },
+    { enabled: true, account: "leeroi2", name: "Melok2", type: "priest" },
+    { enabled: true, account: "leeroi2", name: "Orca2", type: "rogue" },
+    { enabled: false, account: "leeroi2", name: "DisabledChar2", type: "warrior" }, // Disabled
+
+    // Account: leeroi3
+    { enabled: true, account: "leeroi3", name: "Lucky3", type: "mage" },
+    { enabled: true, account: "leeroi3", name: "Melok3", type: "priest" },
+    { enabled: false, account: "leeroi3", name: "DisabledChar3", type: "paladin" }, // Disabled
+]
+
+const SERVER_REGION: ServerRegion = DEFAULT_REGION
+const SERVER_IDENTIFIER: ServerIdentifier = DEFAULT_IDENTIFIER
+const MAX_CHARS = 9
+
+const REPLENISHABLES = new Map<ItemName, number>([
+    ["hpot1", 2500],
+    ["mpot1", 2500],
+])
 
 const CRABRAVE_ITEM_CONFIG: ItemConfig = {
     "cclaw": {
@@ -85,15 +151,12 @@ const CRABRAVE_ITEM_CONFIG: ItemConfig = {
     }
 }
 
+// ============== STRATEGIES ==============
+
 const CONTEXTS: Strategist<PingCompensatedCharacter>[] = []
-const MAX_CHARS = 9
-const PARTY_LEADER = "Lucky3"
-const SERVER_REGION: ServerRegion = DEFAULT_REGION
-const SERVER_IDENTIFIER: ServerIdentifier = DEFAULT_IDENTIFIER
-const REPLENISHABLES = new Map<ItemName, number>([
-    ["hpot1", 2500],
-    ["mpot1", 2500],
-])
+
+// Find party leader
+const PARTY_LEADER = CHARACTERS.find(c => c.enabled && c.isPartyLeader)?.name || CHARACTERS.find(c => c.enabled)?.name
 
 const avoidStackingStrategy = new AvoidStackingStrategy()
 const avoidDeathStrategy = new AvoidDeathStrategy()
@@ -129,40 +192,21 @@ const sellStrategy = new SellStrategy({
     itemConfig: CRABRAVE_ITEM_CONFIG
 })
 
-class DisconnectOnCommandStrategy implements Strategy<PingCompensatedCharacter> {
-    private onCodeEval: (data: string) => Promise<void>
-
-    public onApply(bot: PingCompensatedCharacter) {
-        this.onCodeEval = async (data: string) => {
-            data = data.toLowerCase()
-            if (data == "stop" || data == "disconnect") {
-                stopRaving(bot.characterID).catch(console.error)
-            }
-        }
-
-        bot.socket.on("code_eval", this.onCodeEval)
-    }
-
-    public onRemove(bot: PingCompensatedCharacter) {
-        if (this.onCodeEval) bot.socket.removeListener("code_eval", this.onCodeEval)
-    }
-}
-const disconnectOnCommandStrategy = new DisconnectOnCommandStrategy()
-
 const currentSetups = new Map<
     Strategist<PingCompensatedCharacter>,
     Strategy<PingCompensatedCharacter>[]
 >()
+
 const swapStrategies = (context: Strategist<PingCompensatedCharacter>, strategies: Strategy<PingCompensatedCharacter>[]) => {
     // Remove old strategies that aren't in the list
     for (const strategy of currentSetups.get(context) ?? []) {
-        if (strategies.includes(strategy)) continue // Keep it
+        if (strategies.includes(strategy)) continue
         context.removeStrategy(strategy)
     }
 
     // Add strategies that aren't applied yet
     for (const strategy of strategies) {
-        if (context.hasStrategy(strategy)) continue // Already have it
+        if (context.hasStrategy(strategy)) continue
         context.applyStrategy(strategy)
     }
 
@@ -192,9 +236,9 @@ const contextsLogic = async () => {
             // Need replenishables
             for (const [item, numHold] of REPLENISHABLES) {
                 const numHas = context.bot.countItem(item, context.bot.items)
-                if (numHas > (numHold / 4)) continue // We have more 25% of the amount we want
+                if (numHas > (numHold / 4)) continue
                 const numWant = numHold - numHas
-                if (!context.bot.canBuy(item, { ignoreLocation: true, quantity: numWant })) continue // We can't buy enough, don't go to buy them
+                if (!context.bot.canBuy(item, { ignoreLocation: true, quantity: numWant })) continue
 
                 swapStrategies(context, [getReplenishablesStrategy])
                 continue
@@ -220,7 +264,6 @@ async function startShared(context: Strategist<PingCompensatedCharacter>) {
     context.applyStrategy(respawnStrategy)
     context.applyStrategy(elixirStrategy)
     context.applyStrategy(itemStrategy)
-    context.applyStrategy(disconnectOnCommandStrategy)
     CONTEXTS.push(context)
 }
 
@@ -252,27 +295,34 @@ async function startWarrior(context: Strategist<Warrior>) {
     context.applyStrategy(chargeStrategy)
 }
 
-const stopRaving = async (characterID: string) => {
+const stopCharacter = async (characterName: string) => {
     let context: Strategist<PingCompensatedCharacter>
     for (const find of CONTEXTS) {
-        if (find.bot.characterID !== characterID) continue
+        if (find.bot.name !== characterName) continue
         context = find
         break
     }
 
-    if (!context) return // Couldn't find context
-
+    if (!context) return
     const publicIndex = CONTEXTS.indexOf(context)
     context.stop()
     CONTEXTS.splice(publicIndex, 1)
+    console.log(`[STOP] Stopped character: ${characterName}`)
 }
 
-const startRaving = async (type: CharacterType, userID: string, userAuth: string, characterID: string, attemptNum = 0) => {
+const startCharacter = async (
+    accountKey: keyof typeof ACCOUNTS,
+    name: string,
+    type: CharacterType,
+    attemptNum = 0
+) => {
+    const credentials = ACCOUNTS[accountKey]
+
     // Remove stopped contexts
     for (let i = 0; i < CONTEXTS.length; i++) {
         const context = CONTEXTS[i]
-        if (context.isStopped() && context.bot.characterID) {
-            await stopRaving(context.bot.characterID)
+        if (context.isStopped() && context.bot.name) {
+            await stopCharacter(context.bot.name)
             i -= 1
         }
     }
@@ -280,35 +330,34 @@ const startRaving = async (type: CharacterType, userID: string, userAuth: string
     // Checks
     if (CONTEXTS.length >= MAX_CHARS) throw `Too many characters are already running (We only support ${MAX_CHARS} characters)`
     for (const context of CONTEXTS) {
-        const character = context.bot
-        if (character.characterID == characterID) throw `There is a character with the ID '${characterID}' (${character.id}) already running. Stop the character first to change its settings.`
+        if (context.bot.name == name) throw `Character '${name}' is already running!`
     }
 
     let bot: PingCompensatedCharacter
     try {
         switch (type) {
             case "mage": {
-                bot = new AL.Mage(userID, userAuth, characterID, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
+                bot = new AL.Mage(credentials.userID, credentials.userAuth, name, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
                 break
             }
             case "paladin": {
-                bot = new AL.Paladin(userID, userAuth, characterID, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
+                bot = new AL.Paladin(credentials.userID, credentials.userAuth, name, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
                 break
             }
             case "priest": {
-                bot = new AL.Priest(userID, userAuth, characterID, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
+                bot = new AL.Priest(credentials.userID, credentials.userAuth, name, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
                 break
             }
             case "ranger": {
-                bot = new AL.Ranger(userID, userAuth, characterID, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
+                bot = new AL.Ranger(credentials.userID, credentials.userAuth, name, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
                 break
             }
             case "rogue": {
-                bot = new AL.Rogue(userID, userAuth, characterID, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
+                bot = new AL.Rogue(credentials.userID, credentials.userAuth, name, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
                 break
             }
             case "warrior": {
-                bot = new AL.Warrior(userID, userAuth, characterID, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
+                bot = new AL.Warrior(credentials.userID, credentials.userAuth, name, AL.Game.G, AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])
                 break
             }
             default: {
@@ -318,15 +367,15 @@ const startRaving = async (type: CharacterType, userID: string, userAuth: string
         await bot.connect()
     } catch (e) {
         if (bot) bot.disconnect()
-        console.error(e)
+        console.error(`[ERROR] Failed to connect ${name}:`, e)
         if (/nouser/.test(e)) {
-            throw new Error(`Authorization failed for ${characterID}!`)
+            throw new Error(`Authorization failed for ${name}!`)
         }
         attemptNum += 1
         if (attemptNum < 2) {
-            setTimeout(startRaving, 1_000, type, userID, userAuth, characterID, attemptNum)
+            setTimeout(startCharacter, 1_000, accountKey, name, type, attemptNum)
         } else {
-            throw new Error(`Failed starting ${characterID}!`)
+            throw new Error(`Failed starting ${name}!`)
         }
         return
     }
@@ -364,46 +413,96 @@ const startRaving = async (type: CharacterType, userID: string, userAuth: string
             break
         }
     }
+
+    console.log(`[START] Started character: ${name} (${type}) on account ${accountKey}`)
 }
 
-const app = express()
-app.use(express.json())
-app.use(cors())
-app.use(bodyParser.urlencoded({ extended: true }))
-const port = 8092
+// ============== MAIN ==============
 
-app.get("/", (_req, res) => { res.sendFile(path.join(path.resolve(), "/index.html")) })
-app.get("/m5x7.ttf", (_req, res) => { res.sendFile(path.join(path.resolve(), "/m5x7.ttf")) })
+async function main() {
+    // Print startup banner
+    console.log("")
+    console.log("╔═══════════════════════════════════════════════════════════╗")
+    console.log("║         Crabrave Local - Multi-Account Bot                ║")
+    console.log("╚═══════════════════════════════════════════════════════════╝")
+    console.log("")
 
-app.post("/",
-    body("user").trim().isLength({ max: 16, min: 16 }).withMessage("User IDs are exactly 16 digits."),
-    body("user").trim().isNumeric().withMessage("User IDs are numeric."),
-    body("auth").trim().isLength({ max: 21, min: 21 }).withMessage("Auth codes are exactly 21 characters."),
-    body("auth").trim().isAlphanumeric("en-US", { ignore: /\s/ }).withMessage("Auth codes are alphanumeric."),
-    body("char").trim().isLength({ max: 16, min: 16 }).withMessage("Character IDs are exactly 16 digits."),
-    body("char").trim().isNumeric().withMessage("Character IDs are numeric."),
-    body("char_type").trim().matches(/\b(?:mage|paladin|priest|ranger|rogue|warrior)\b/).withMessage("Character type not supported."),
-    async (req, res) => {
-        console.log(`Something incoming!`)
-        const errors = validationResult(req)
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() })
+    // Check if credentials are still placeholders
+    const missingCredentials: string[] = []
+    for (const [accountName, creds] of Object.entries(ACCOUNTS)) {
+        if (creds.userID.includes("YOUR_") || creds.userAuth.includes("YOUR_")) {
+            missingCredentials.push(accountName)
         }
+    }
 
+    if (missingCredentials.length > 0) {
+        console.log("⚠️  WARNING: Missing credentials for account(s):", missingCredentials.join(", "))
+        console.log("")
+        console.log("┌───────────────────────────────────────────────────────────┐")
+        console.log("│  HOW TO GET YOUR CREDENTIALS                              │")
+        console.log("├───────────────────────────────────────────────────────────┤")
+        console.log("│  1. Log into Adventure Land with the account              │")
+        console.log("│  2. Open code editor in-game (press 'J')                  │")
+        console.log("│  3. Run this code:                                        │")
+        console.log("│     console.log('user_id:', parent.user_id)               │")
+        console.log("│     console.log('user_auth:', parent.user_auth)           │")
+        console.log("│  4. Open browser console (F12)                            │")
+        console.log("│  5. Copy the values                                       │")
+        console.log("│  6. Paste into ACCOUNTS section in this file              │")
+        console.log("└───────────────────────────────────────────────────────────┘")
+        console.log("")
+        console.log("Edit: source/crabrave/crabrave_local.ts")
+        console.log("")
+        return // Don't start without credentials
+    }
+
+    console.log("Loading game data...")
+    await Promise.all([AL.Game.loginJSONFile("../../credentials.json"), AL.Game.getGData(true)])
+    await AL.Pathfinder.prepare(AL.Game.G, { cheat: true })
+    console.log("Game data loaded!\n")
+
+    // Filter enabled characters
+    const enabledChars = CHARACTERS.filter(c => c.enabled)
+    const disabledChars = CHARACTERS.filter(c => !c.enabled)
+
+    console.log("┌─────────────────────────────────────────────────────────────┐")
+    console.log("│  CHARACTER CONFIGURATION                                    │")
+    console.log("├─────────────────────────────────────────────────────────────┤")
+    console.log(`│  Enabled:  ${enabledChars.length} character(s)                                        │`)
+    if (disabledChars.length > 0) {
+        console.log(`│  Disabled: ${disabledChars.length} character(s)                                       │`)
+        console.log("├─────────────────────────────────────────────────────────────┤")
+        console.log("│  Disabled characters:                                       │")
+        for (const char of disabledChars) {
+            const line = `│    - ${char.name} (${char.type}) on ${char.account}`
+            console.log(line.padEnd(60, " ") + "│")
+        }
+    }
+    console.log("└─────────────────────────────────────────────────────────────┘")
+    console.log("")
+
+    // Determine party leader
+    const partyLeader = enabledChars.find(c => c.isPartyLeader) || enabledChars[0]
+    if (partyLeader) {
+        console.log(`Party leader: ${partyLeader.name}`)
+    }
+    console.log("")
+
+    // Start enabled characters
+    console.log("Starting characters...")
+    console.log("")
+    for (const char of enabledChars) {
         try {
-            const charType = req.body.char_type.trim()
-            const userID = req.body.user.trim()
-            const userAuth = req.body.auth.trim()
-            const characterID = req.body.char.trim()
-
-            await startRaving(charType, userID, userAuth, characterID)
-            return res.status(200).send("Go to https://adventure.land/comm to observer your character.")
+            await startCharacter(char.account, char.name, char.type)
         } catch (e) {
-            console.error(e)
-            return res.status(500).send(e)
+            console.error(`[ERROR] Failed to start ${char.name}:`, e)
         }
-    })
+    }
 
-app.listen(port, async () => {
-    console.log(`Ready on port ${port}!`)
-})
+    console.log("")
+    console.log("═".repeat(60))
+    console.log("All characters processed!")
+    console.log("═".repeat(60))
+}
+
+main().catch(console.error)
