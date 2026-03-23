@@ -104,6 +104,7 @@ interface AccountConfig {
         enabled: boolean
         name: string
         type: CharacterType
+        id: string
         isPartyLeader?: boolean
     }[]
 }
@@ -314,6 +315,7 @@ const startCharacter = async (
     credentials: { userID: string; userAuth: string },
     name: string,
     type: CharacterType,
+    characterID: string,
     attemptNum = 0
 ) => {
     // Debug output
@@ -322,6 +324,7 @@ const startCharacter = async (
     console.log(`  - account userAuth: ${credentials.userAuth}`)
     console.log(`  - character name: ${name}`)
     console.log(`  - character type: ${type}`)
+    console.log(`  - characterID: ${characterID}`)
     console.log(`  - attemptNum: ${attemptNum}`)
     console.log(`  - SERVER_REGION: ${SERVER_REGION}`)
     console.log(`  - SERVER_IDENTIFIER: ${SERVER_IDENTIFIER}`)
@@ -353,20 +356,10 @@ const startCharacter = async (
         console.log(`  Arguments:`)
         console.log(`    - userID: ${credentials.userID}`)
         console.log(`    - userAuth: ${credentials.userAuth}`)
+        console.log(`    - characterID: ${characterID}`)
         console.log(`    - name: ${name}`)
         console.log(`    - G: ${AL.Game.G ? 'defined' : 'undefined'}`)
         console.log(`    - server: ${JSON.stringify(serverData)}`)
-
-    //    console.log(`[DEBUG] Creating character '${cName}':`)
-    //     console.log(`  userID: ${userID}`)
-    //     console.log(`  userAuth: ${userAuth?.substring(0, 10)}...`)
-    //     console.log(`  characterID: ${characterID}`)
-    //     console.log(`  G data keys: ${Object.keys(AL.Game.G).join(", ")}`)
-    //     console.log(`  sRegion: ${sRegion}`)
-    //     console.log(`  sID: ${sID}`)
-    //     console.log(`  servers[${sRegion}][${sID}]:`, AL.Game.servers[sRegion]?.[sID])
-
-            const characterID = AL.Game.characters[name].id
 
         switch (type) {
             case "mage": {
@@ -406,7 +399,7 @@ const startCharacter = async (
         }
         attemptNum += 1
         if (attemptNum < 2) {
-            setTimeout(startCharacter, 1_000, credentials, name, type, attemptNum)
+            setTimeout(startCharacter, 1_000, credentials, name, type, characterID, attemptNum)
         } else {
             throw new Error(`Failed starting ${name}!`)
         }
@@ -489,9 +482,10 @@ async function main() {
         credentials: { userID: string; userAuth: string }
         name: string
         type: CharacterType
+        id: string
         isPartyLeader?: boolean
     }[] = []
-    
+
     for (const config of accountConfigs) {
         const enabledChars = config.characters.filter(c => c.enabled)
         for (const char of enabledChars) {
@@ -500,6 +494,7 @@ async function main() {
                 credentials: config.credentials,
                 name: char.name,
                 type: char.type,
+                id: char.id,
                 isPartyLeader: char.isPartyLeader
             })
         }
@@ -532,7 +527,7 @@ async function main() {
     console.log("")
     for (const char of allCharacters) {
         try {
-            await startCharacter(char.credentials, char.name, char.type)
+            await startCharacter(char.credentials, char.name, char.type, char.id)
         } catch (e) {
             console.error(`[ERROR] Failed to start ${char.name}:`, e)
         }

@@ -1,3 +1,26 @@
+// ============================================================================
+// Adventure Land code to start a character on the local crabrave server
+// ============================================================================
+//
+// HOW TO GET YOUR CREDENTIALS (user_id and user_auth)
+// ============================================================================
+// 
+// 1. Log into Adventure Land with the account you want to get credentials for
+// 
+// 2. Open the code editor in-game (press 'J' or click the code icon)
+// 
+// 3. Paste and run this code:
+// 
+//    console.log("user_id:", parent.user_id)
+//    console.log("user_auth:", parent.user_auth)
+// 
+// 4. Open your browser's developer console (F12)
+// 
+// 5. Copy the values from the console output
+// 
+// 6. Use these values in your crabrave_local.ts configuration
+// 
+// ============================================================================
 
 async function startRaving(name, url = 'http://127.0.0.1:8092/') {
     if (!parent.X) throw new Error("Couldn't find `X` data!")
@@ -25,5 +48,5 @@ async function startRaving(name, url = 'http://127.0.0.1:8092/') {
     return result.text()
 }
 
-
-show_json(await startRaving("Lucky3"))
+// Usage: Copy the startRaving function to Adventure Land code editor and run:
+// show_json(await startRaving("Lucky2"))

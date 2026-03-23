@@ -14,7 +14,7 @@ function exportAccountConfig() {
     if (!parent.user_auth) throw new Error("Couldn't find `parent.user_auth`!")
 
     const chars = parent.X.characters
-    
+
     // Return clean JSON configuration - copy this output and save as accounts/youraccount.json
     return {
         accountName: "leeroi" + parent.user_id.slice(-1),  // Edit this if you want a different name
@@ -26,6 +26,7 @@ function exportAccountConfig() {
             enabled: true,           // Set to false to disable this character
             name: c.name,
             type: c.type,
+            id: c.id,                // Character ID for offline login
             isPartyLeader: i === 0   // First character is party leader
         }))
     }
