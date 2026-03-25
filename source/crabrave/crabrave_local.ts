@@ -7,7 +7,7 @@ import { Strategist, Strategy } from "../strategy_pattern/context.js"
 import { ElixirStrategy } from "../strategy_pattern/strategies/elixir.js"
 import { ItemStrategy } from "../strategy_pattern/strategies/item.js"
 import { MagiportOthersSmartMovingToUsStrategy } from "../strategy_pattern/strategies/magiport.js"
-import { RequestPartyStrategy } from "../strategy_pattern/strategies/party.js"
+import { AcceptPartyRequestStrategy, RequestPartyStrategy } from "../strategy_pattern/strategies/party.js"
 import { PartyHealStrategy } from "../strategy_pattern/strategies/partyheal.js"
 import { RespawnStrategy } from "../strategy_pattern/strategies/respawn.js"
 import { GiveRogueSpeedStrategy } from "../strategy_pattern/strategies/rspeed.js"
@@ -192,6 +192,9 @@ const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackS
     rogue: new RogueAttackStrategy({ contexts: CONTEXTS, type: "crab" }),
     warrior: new WarriorAttackStrategy({ contexts: CONTEXTS, disableAgitate: true, type: "crab" })
 }
+
+const partyAcceptStrategy =
+    new AcceptPartyRequestStrategy(/** TODO: TEMP: Allow anyone to join { allowList: PARTY_ALLOWLIST } */)
 const partyHealStrategy = new PartyHealStrategy(CONTEXTS)
 const partyRequestStrategy = new RequestPartyStrategy("")  // Will be set in main()
 const respawnStrategy = new RespawnStrategy()
@@ -257,7 +260,12 @@ const contextsLogic = async () => {
 contextsLogic()
 
 async function startShared(context: Strategist<PingCompensatedCharacter>) {
-    context.applyStrategy(partyRequestStrategy)
+    context.applyStrategy(partyAcceptStrategy)
+
+    if (context.bot.id !== partyRequestStrategy.partyLeader) {
+        context.applyStrategy(partyRequestStrategy)
+    }
+    
     context.applyStrategy(buyStrategy)
     context.applyStrategy(sellStrategy)
     context.applyStrategy(avoidStackingStrategy)
