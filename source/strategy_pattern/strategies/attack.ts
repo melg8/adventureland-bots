@@ -49,6 +49,14 @@ export type BaseAttackStrategyOptions = GetEntitiesFilters & {
     /** If set, we will generate a loadout */
     generateEnsureEquipped?: GenerateEnsureEquipped
     maximumTargets?: number
+    /** Enable deterministic target distribution to prevent overkill when multiple bots farm same spot */
+    enableTargetDistribution?: boolean
+    /** Lock timeout in ms for target distribution (default: 3000ms) */
+    targetLockTimeout?: number
+    /** HP threshold for finishing off locked targets (default: 0.25 = 25%) */
+    finishOffHPThreshold?: number
+    /** Enable time-based attack distribution so bots don't all attack at once (default: false) */
+    enableTimeDistribution?: boolean
 }
 
 export const KILL_STEAL_AVOID_MONSTERS: MonsterName[] = [
@@ -98,6 +106,305 @@ export const AGGROED_MONSTERS = new TTLCache<string, true>({
     ttl: 2000,
 })
 
+/** Target lock information for distributed targeting */
+interface TargetLock {
+    lockedBy: string
+    lockedAt: number
+}
+
+/** Debug logging counter to avoid spam */
+let debugLogCounter = 0
+
+/**
+ * Deterministic target distributor using hash-based assignment
+ * Ensures multiple bots on the same spot don't all target the same monster
+ */
+class TargetDistributor {
+    private botIds: string[]
+    private locks = new Map<string, TargetLock>()
+    private lockTimeout: number
+    private finishOffHPThreshold: number
+    private lastDebugLog = 0
+
+    constructor(botIds: string[], lockTimeout: number = 3000, finishOffHPThreshold: number = 0.25) {
+        // Sort bot IDs for deterministic ordering
+        this.botIds = [...botIds].sort()
+        this.lockTimeout = lockTimeout
+        this.finishOffHPThreshold = finishOffHPThreshold
+    }
+
+    /**
+     * Simple hash function for deterministic distribution
+     * Same input always produces same output across all bots
+     */
+    private simpleHash(str: string): number {
+        let hash = 0
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i)
+            hash = ((hash << 5) - hash) + char
+            hash = hash & hash // Convert to 32bit integer
+        }
+        return Math.abs(hash)
+    }
+
+    /**
+     * Check if a target is locked (and should not be targeted by other bots)
+     */
+    isLocked(entityId: string, currentBotId: string): boolean {
+        const lock = this.locks.get(entityId)
+        if (!lock) return false
+
+        // Own lock is always valid
+        if (lock.lockedBy === currentBotId) return true
+
+        // Check if lock has expired
+        if (Date.now() - lock.lockedAt > this.lockTimeout) {
+            this.locks.delete(entityId)
+            return false
+        }
+
+        return true
+    }
+
+    /**
+     * Try to lock a target for this bot
+     * Returns true if lock was acquired
+     */
+    tryLock(entityId: string, botId: string): boolean {
+        const existing = this.locks.get(entityId)
+
+        // Already locked by us
+        if (existing?.lockedBy === botId) return true
+
+        // Locked by someone else and not expired
+        if (existing && Date.now() - existing.lockedAt <= this.lockTimeout) {
+            return false
+        }
+
+        // Acquire lock
+        this.locks.set(entityId, {
+            lockedBy: botId,
+            lockedAt: Date.now(),
+        })
+        return true
+    }
+
+    /**
+     * Release a lock (called after target is killed)
+     */
+    release(entityId: string): void {
+        this.locks.delete(entityId)
+    }
+
+    /**
+     * Check if we should finish off a target locked by another bot
+     */
+    shouldFinishOff(botId: string, entity: Entity): boolean {
+        const lock = this.locks.get(entity.id)
+        if (!lock) return false
+        if (lock.lockedBy === botId) return true // Our own lock
+
+        const hpPercent = entity.hp / entity.max_hp
+        const lockExpired = Date.now() - lock.lockedAt > this.lockTimeout
+
+        // Finish off if HP is low or lock has expired
+        return hpPercent < this.finishOffHPThreshold || lockExpired
+    }
+
+    /**
+     * Determine if this bot should target this entity based on hash distribution
+     */
+    shouldTargetEntity(botId: string, entityId: string): boolean {
+        const hash = this.simpleHash(botId + entityId)
+        const assignedBotIndex = hash % this.botIds.length
+        const myIndex = this.botIds.indexOf(botId)
+        return assignedBotIndex === myIndex
+    }
+
+    /**
+     * Select the best target for this bot from available entities
+     * Returns null only if there are no entities at all
+     * 
+     * Behavior: 
+     * 1. Try to get an unlocked target assigned by hash
+     * 2. If assigned target is locked by someone, help attack it anyway
+     * 3. If no hash assignment, pick lowest HP target to help with
+     */
+    selectTarget(botId: string, entities: Entity[], canKillInOneShot: (e: Entity) => boolean): Entity | null {
+        if (entities.length === 0) return null
+
+        // Sort entities by ID for deterministic ordering
+        const sortedEntities = [...entities].sort((a, b) => a.id.localeCompare(b.id))
+
+        // Debug log entity list and hash assignments (throttled to once per 5 seconds)
+        const now = Date.now()
+        if (now - this.lastDebugLog > 5000) {
+            this.lastDebugLog = now
+            console.log(`[TargetDistributor] ${botId}: ${entities.length} entities, bots: [${this.botIds.join(', ')}]`)
+            for (const entity of sortedEntities.slice(0, 3)) { // Show only first 3
+                const hash = this.simpleHash(botId + entity.id)
+                const assignedBot = this.botIds[hash % this.botIds.length]
+                console.log(`  ${entity.id} (${entity.type}) → ${assignedBot}`)
+            }
+        }
+
+        // Priority 1: Can kill in one shot and not locked by someone else
+        for (const entity of sortedEntities) {
+            if (canKillInOneShot(entity)) {
+                const isLocked = this.isLocked(entity.id, botId)
+
+                if (!isLocked) {
+                    // Not locked - claim it
+                    if (this.tryLock(entity.id, botId)) {
+                        return entity
+                    }
+                } else {
+                    // Locked by us - attack it
+                    return entity
+                }
+            }
+        }
+
+        // Priority 2: Find target assigned to this bot by hash
+        for (const entity of sortedEntities) {
+            if (this.shouldTargetEntity(botId, entity.id)) {
+                // Lock if not locked, or attack even if locked by someone (helping)
+                this.tryLock(entity.id, botId) // Try to lock, but attack even if fails
+                return entity
+            }
+        }
+
+        // Priority 3: No hash assignment - help with lowest HP target
+        const sortedByHP = [...sortedEntities].sort((a, b) => a.hp - b.hp)
+        return sortedByHP[0] // Just attack the weakest target
+    }
+
+    /**
+     * Clean up expired locks periodically
+     */
+    cleanup(): void {
+        const now = Date.now()
+        for (const [entityId, lock] of this.locks.entries()) {
+            if (now - lock.lockedAt > this.lockTimeout) {
+                this.locks.delete(entityId)
+            }
+        }
+    }
+}
+
+/**
+ * Time-based attack distributor
+ * Ensures bots attack in staggered intervals rather than all at once
+ * 
+ * Example: 6 bots with 960ms attack interval
+ * - Cycle = 960ms (time for one bot to attack again)
+ * - Slot size = 960ms / 6 = 160ms (time between each bot's attack)
+ * - Bot 0: 0-160ms, 960-1120ms, 1920-2080ms...
+ * - Bot 1: 160-320ms, 1120-1280ms, 2080-2240ms...
+ * - Bot 2: 320-480ms, 1280-1440ms, 2240-2400ms...
+ * - etc.
+ */
+class TimeDistributor {
+    private botIds: string[]
+    private attackInterval: number
+    private slotSize: number
+    private lastAttackTime = new Map<string, number>()
+    // Use a fixed baseTime so all bots are synchronized regardless of when they're created
+    private static readonly BASE_TIME = Date.now()
+    private debugLogTime = 0
+
+    constructor(botIds: string[], attackInterval: number) {
+        // Sort bot IDs for deterministic ordering
+        this.botIds = [...botIds].sort()
+        this.attackInterval = attackInterval
+        // Each bot gets a time slot = attackInterval / numBots
+        this.slotSize = Math.round(attackInterval / botIds.length)
+        console.log(`[TimeDistributor] Created: ${botIds.length} bots, attackInterval=${attackInterval}ms, slotSize=${this.slotSize}ms, cycle=${attackInterval}ms`)
+    }
+
+    /**
+     * Check if it's this bot's turn to attack
+     * Returns true if the bot can attack now
+     * 
+     * Rules:
+     * 1. Bot can only attack once per full cycle (attackInterval ms)
+     * 2. Bot should attack during its time slot if possible
+     * 3. If bot missed its slot, it can attack later in the cycle
+     */
+    canAttack(botId: string): boolean {
+        const botIndex = this.botIds.indexOf(botId)
+        if (botIndex === -1) return true // Unknown bot, allow attack
+
+        const now = Date.now()
+        const lastAttack = this.lastAttackTime.get(botId) ?? 0
+        
+        // Calculate this bot's time slot within the cycle
+        const botSlotStart = (botIndex * this.slotSize)
+        const botSlotEnd = botSlotStart + this.slotSize
+        
+        // Calculate where we are in the current cycle
+        const cycleLength = this.attackInterval
+        const cyclePosition = (now - TimeDistributor.BASE_TIME) % cycleLength
+        
+        // Check if we're in this bot's slot
+        const isInSlot = cyclePosition >= botSlotStart && cyclePosition < botSlotEnd
+        
+        // Check if enough time has passed since last attack (must be >= full cycle)
+        // On first cycle (timeSinceLastAttack = Infinity), bot MUST wait for its slot
+        const timeSinceLastAttack = lastAttack > 0 ? now - lastAttack : Infinity
+        const enoughTimePassed = timeSinceLastAttack >= cycleLength
+
+        // Bot can attack ONLY if:
+        // 1. Enough time has passed since last attack (full cycle+)
+        // 2. We are currently in the bot's designated time slot
+        // This ensures bots attack in strict order, one per slot, never all at once
+        const canAttack = enoughTimePassed && isInSlot
+        
+        // Debug log (throttled to once per 20 seconds per bot)
+        if (now - this.debugLogTime > 20000) {
+            this.debugLogTime = now
+            const timeUntilNext = this.getTimeUntilNextSlot(botId)
+            console.log(`[TimeDistributor] ${botId} (idx=${botIndex}): pos=${cyclePosition}ms, slot=${botSlotStart}-${botSlotEnd}ms, inSlot=${isInSlot}, timeSinceLast=${Math.round(timeSinceLastAttack)}ms, canAttack=${canAttack}`)
+        }
+        
+        if (!canAttack && cyclePosition >= botSlotStart && cyclePosition < botSlotEnd + 50) {
+            // Only log WAITING when bot is close to or in its slot
+            console.log(`[TimeDistributor] ${botId}: WAITING (pos=${cyclePosition}ms, slot=${botSlotStart}-${botSlotEnd}ms, wait=${this.getTimeUntilNextSlot(botId)}ms)`)
+        }
+        return canAttack
+    }
+
+    /**
+     * Record that this bot has attacked
+     */
+    recordAttack(botId: string): void {
+        const now = Date.now()
+        this.lastAttackTime.set(botId, now)
+        const botIndex = this.botIds.indexOf(botId)
+        const cyclePosition = (now - TimeDistributor.BASE_TIME) % this.attackInterval
+        console.log(`[TimeDistributor] ${botId} (idx=${botIndex}): ATTACK at ${cyclePosition}ms (slot ${botIndex * this.slotSize}-${(botIndex + 1) * this.slotSize}ms)`)
+    }
+
+    /**
+     * Get the time until this bot's next attack slot
+     */
+    getTimeUntilNextSlot(botId: string): number {
+        const botIndex = this.botIds.indexOf(botId)
+        if (botIndex === -1) return 0
+
+        const now = Date.now()
+        const cycleLength = this.attackInterval
+        const cyclePosition = (now - TimeDistributor.BASE_TIME) % cycleLength
+        const botSlotStart = (botIndex * this.slotSize)
+        
+        if (cyclePosition < botSlotStart) {
+            return botSlotStart - cyclePosition
+        } else {
+            return cycleLength - cyclePosition + botSlotStart
+        }
+    }
+}
+
 export class BaseAttackStrategy<Type extends Character> implements Strategy<Type> {
     public loops = new Map<LoopName, Loop<Type>>()
 
@@ -106,10 +413,13 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
 
     protected botSort = new Map<string, (a: Entity, b: Entity) => boolean>()
     protected botEnsureEquipped = new Map<string, EnsureEquipped>()
+    protected botTargetDistributor = new Map<string, TargetDistributor>()
+    protected botTimeDistributor = new Map<string, TimeDistributor>()
 
     protected options: BaseAttackStrategyOptions
 
     protected interval: SkillName[] = ["attack"]
+    protected cleanupInterval: NodeJS.Timeout | null = null
 
     public constructor(options?: BaseAttackStrategyOptions) {
         this.options = options ?? {
@@ -141,6 +451,54 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
         this.botEnsureEquipped.set(bot.id, this.options.ensureEquipped)
 
         this.botSort.set(bot.id, sortPriority(bot, this.options.typeList))
+
+        // Initialize target distributor for this bot if enabled
+        if (this.options.enableTargetDistribution && !this.botTargetDistributor.has(bot.id)) {
+            // Get all current bot IDs from contexts
+            const botIds = this.options.contexts.map((c) => c.bot.id).sort()
+            const lockTimeout = this.options.targetLockTimeout ?? 3000
+            const finishOffHPThreshold = this.options.finishOffHPThreshold ?? 0.25
+
+            // Create distributor for this bot
+            this.botTargetDistributor.set(
+                bot.id,
+                new TargetDistributor(botIds, lockTimeout, finishOffHPThreshold),
+            )
+
+            // Start periodic cleanup if not already running
+            if (!this.cleanupInterval) {
+                this.cleanupInterval = setInterval(() => {
+                    for (const distributor of this.botTargetDistributor.values()) {
+                        distributor.cleanup()
+                    }
+                }, 5000)
+            }
+        }
+
+        // Initialize time distributor for this bot if enabled
+        if (this.options.enableTimeDistribution && !this.botTimeDistributor.has(bot.id)) {
+            // Get all current bot IDs from contexts
+            const botIds = this.options.contexts.map((c) => c.bot.id).sort()
+            
+            // Calculate attack interval based on AVERAGE attack speed of all bots
+            // This ensures all bots use the same interval and stay synchronized
+            const attackIntervals = this.options.contexts.map((c) => {
+                const attacksPerSecond = c.bot.frequency || 1
+                return Math.round(1000 / attacksPerSecond)
+            })
+            const avgAttackInterval = Math.round(attackIntervals.reduce((a, b) => a + b, 0) / attackIntervals.length)
+            
+            // Use average interval for all bots to keep them synchronized
+            const attackInterval = avgAttackInterval
+
+            // Create distributor for this bot
+            this.botTimeDistributor.set(
+                bot.id,
+                new TimeDistributor(botIds, attackInterval),
+            )
+            
+            console.log(`[TimeDistributor] ${bot.id}: Initialized with ${botIds.length} bots, attackInterval=${attackInterval}ms (avg of [${attackIntervals.join(', ')}]ms)`)
+        }
 
         if (!this.options.disableKillSteal && !this.options.disableZapper) {
             this.stealOnAction = (data: ActionData) => {
@@ -258,6 +616,15 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
     public onRemove(bot: Type) {
         if (this.greedyOnEntities) bot.socket.removeListener("entities", this.greedyOnEntities)
         if (this.stealOnAction) bot.socket.removeListener("action", this.stealOnAction)
+
+        // Clean up target distributor
+        this.botTargetDistributor.delete(bot.id)
+
+        // Clear cleanup interval if no bots left
+        if (this.cleanupInterval && this.botTargetDistributor.size === 0) {
+            clearInterval(this.cleanupInterval)
+            this.cleanupInterval = null
+        }
     }
 
     protected async attack(bot: Type) {
@@ -279,6 +646,9 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
 
     protected async basicAttack(bot: Type, priority: (a: Entity, b: Entity) => boolean): Promise<unknown> {
         if (!bot.canUse("attack")) return // We can't attack
+
+        // Time-based distribution is checked in multiAttack/supershot/etc. before calling basicAttack
+        // So we don't need to check it here again
 
         if (this.options.enableGreedyAggro) {
             // Attack an entity that doesn't have a target if we can
@@ -324,7 +694,27 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
         })
         if (entities.length == 0) return // No targets to attack
 
-        // Prioritize the entities
+        // Use target distribution if enabled
+        if (this.options.enableTargetDistribution) {
+            const distributor = this.botTargetDistributor.get(bot.id)
+            if (distributor) {
+                const target = distributor.selectTarget(bot.id, entities, (e) => bot.canKillInOneShot(e))
+                if (!target) return // No entities at all
+
+                const canKill = bot.canKillInOneShot(target)
+                if (canKill) {
+                    this.preventOverkill(bot, target)
+                    distributor.release(target.id) // Release lock after confirming kill
+                }
+                if (!canKill || entities.length > 1) {
+                    this.getEnergizeFromOther(bot).catch(suppress_errors)
+                }
+
+                return bot.basicAttack(target.id)
+            }
+        }
+
+        // Prioritize the entities (fallback to original behavior)
         const targets = new FastPriorityQueue<Entity>(priority)
         for (const entity of entities) targets.add(entity)
 
@@ -371,7 +761,27 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
         })
         if (entities.length == 0) return // No targets to attack
 
-        // Prioritize the entities
+        // Use target distribution if enabled
+        if (this.options.enableTargetDistribution) {
+            const distributor = this.botTargetDistributor.get(bot.id)
+            if (distributor) {
+                const target = distributor.selectTarget(bot.id, entities, (e) => bot.canKillInOneShot(e))
+                if (!target) return // No entities at all
+
+                const canKill = bot.canKillInOneShot(target)
+                if (canKill) {
+                    this.preventOverkill(bot, target)
+                    distributor.release(target.id) // Release lock after confirming kill
+                }
+                if (!canKill || entities.length > 1) {
+                    this.getEnergizeFromOther(bot).catch(suppress_errors)
+                }
+
+                return bot.basicAttack(target.id)
+            }
+        }
+
+        // Prioritize the entities (fallback to original behavior)
         const targets = new FastPriorityQueue<Entity>(priority)
         for (const entity of entities) targets.add(entity)
 
@@ -610,7 +1020,24 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
         }
         if (entities.length == 0) return // No targets to attack
 
-        // Prioritize the entities
+        // Use target distribution if enabled
+        if (this.options.enableTargetDistribution) {
+            const distributor = this.botTargetDistributor.get(bot.id)
+            if (distributor) {
+                const target = distributor.selectTarget(bot.id, entities, (e) => bot.canKillInOneShot(e, "zapperzap"))
+                if (!target) return // No suitable target for this bot
+
+                const canKill = bot.canKillInOneShot(target, "zapperzap")
+                if (canKill) {
+                    this.preventOverkill(bot, target)
+                    distributor.release(target.id) // Release lock after confirming kill
+                }
+
+                return bot.zapperZap(target.id)
+            }
+        }
+
+        // Prioritize the entities (fallback to original behavior)
         const targets = new FastPriorityQueue<Entity>(priority)
         for (const entity of entities) targets.add(entity)
 

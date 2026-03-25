@@ -31,6 +31,17 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
 
         await this.ensureEquipped(bot).catch(console.error)
 
+        // Check time-based distribution and record attack ONCE per cycle
+        // This must be done before multiAttack/supershot to prevent multiple recordings
+        if (this.options.enableTimeDistribution) {
+            const timeDist = this.botTimeDistributor.get(bot.id)
+            if (timeDist && !timeDist.canAttack(bot.id)) {
+                return // Not this bot's turn to attack yet
+            }
+            // Record attack immediately when we decide we can attack (only once per cycle)
+            timeDist?.recordAttack(bot.id)
+        }
+
         await this.multiAttack(bot, priority).catch(suppress_errors)
         if (!this.options.disableSuperShot) await this.supershot(bot, priority).catch(suppress_errors)
         if (!this.options.disableZapper) await this.zapperAttack(bot, priority).catch(suppress_errors)
@@ -42,6 +53,9 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
     protected async multiAttack(bot: Ranger, priority: (a: Entity, b: Entity) => boolean) {
         if (!bot.canUse("attack")) return
 
+        // Time-based distribution is checked in attack() before this is called
+        // Don't check here to allow supershot to also fire in the same cycle
+
         // Find all targets we want to attack
         const entities = bot.getEntities({
             ...this.options,
@@ -49,6 +63,26 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
             withinRange: "attack",
         })
         if (entities.length == 0) return // No targets to attack
+
+        // Use target distribution if enabled
+        if (this.options.enableTargetDistribution) {
+            const distributor = this.botTargetDistributor.get(bot.id)
+            if (distributor) {
+                const target = distributor.selectTarget(bot.id, entities, (e) => bot.canKillInOneShot(e))
+                if (!target) return // No entities at all
+
+                const canKill = bot.canKillInOneShot(target)
+                if (canKill) {
+                    this.preventOverkill(bot, target)
+                    distributor.release(target.id) // Release lock after confirming kill
+                }
+
+                // Apply hunters mark if enabled
+                if (!this.options.disableHuntersMark) this.applyHuntersMark(bot, target).catch(suppress_errors)
+
+                return bot.basicAttack(target.id)
+            }
+        }
 
         let targetingMe = bot.calculateTargets()
         const targets = new FastPriorityQueue<Entity>(priority)
@@ -186,6 +220,9 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
     protected async supershot(bot: Ranger, priority: (a: Entity, b: Entity) => boolean) {
         if (!bot.canUse("supershot")) return // We can't supershot
 
+        // Time-based distribution is checked in multiAttack before this is called
+        // Don't check/record here to prevent double-counting attacks
+
         // Find all targets we want to attack
         const entities = bot.getEntities({
             ...this.options,
@@ -194,7 +231,24 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
         })
         if (entities.length == 0) return // No targets to attack
 
-        // Prioritize the entities
+        // Use target distribution if enabled
+        if (this.options.enableTargetDistribution) {
+            const distributor = this.botTargetDistributor.get(bot.id)
+            if (distributor) {
+                const target = distributor.selectTarget(bot.id, entities, (e) => bot.canKillInOneShot(e, "supershot"))
+                if (!target) return // No entities at all
+
+                const canKill = bot.canKillInOneShot(target, "supershot")
+                if (canKill) {
+                    this.preventOverkill(bot, target)
+                    distributor.release(target.id) // Release lock after confirming kill
+                }
+
+                return bot.superShot(target.id)
+            }
+        }
+
+        // Prioritize the entities (fallback to original behavior)
         const targets = new FastPriorityQueue<Entity>(priority)
         for (const entity of entities) {
             // If we can kill something guaranteed, break early
@@ -244,6 +298,23 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
             withinRange: "attack",
         })
         if (entities.length == 0) return // No targets to attack
+
+        // Use target distribution if enabled
+        if (this.options.enableTargetDistribution) {
+            const distributor = this.botTargetDistributor.get(bot.id)
+            if (distributor) {
+                const target = distributor.selectTarget(bot.id, entities, (e) => bot.canKillInOneShot(e))
+                if (!target) return // No suitable target for this bot
+
+                const canKill = bot.canKillInOneShot(target)
+                if (canKill) {
+                    this.preventOverkill(bot, target)
+                    distributor.release(target.id) // Release lock after confirming kill
+                }
+
+                return bot.basicAttack(target.id)
+            }
+        }
 
         let targetingMe = bot.calculateTargets()
         const targets = new FastPriorityQueue<Entity>(priority)

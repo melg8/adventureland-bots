@@ -188,12 +188,12 @@ const monsterToFarm = "snake";
 
 const moveStrategy = new ImprovedMoveStrategy(monsterToFarm)
 const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackStrategy<PingCompensatedCharacter> } = {
-    mage: new MageAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm }),
-    paladin: new PaladinAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm }),
-    priest: new PriestAttackStrategy({ contexts: CONTEXTS, disableCurse: true, type: monsterToFarm }),
-    ranger: new RangerAttackStrategy({ contexts: CONTEXTS, disableHuntersMark: true, type: monsterToFarm }),
-    rogue: new RogueAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm }),
-    warrior: new WarriorAttackStrategy({ contexts: CONTEXTS, disableAgitate: true, type: monsterToFarm })
+    mage: new MageAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
+    paladin: new PaladinAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
+    priest: new PriestAttackStrategy({ contexts: CONTEXTS, disableCurse: true, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
+    ranger: new RangerAttackStrategy({ contexts: CONTEXTS, disableHuntersMark: true, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
+    rogue: new RogueAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
+    warrior: new WarriorAttackStrategy({ contexts: CONTEXTS, disableAgitate: true, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true })
 }
 
 const partyAcceptStrategy =

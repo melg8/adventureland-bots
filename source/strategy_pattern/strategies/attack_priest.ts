@@ -86,6 +86,28 @@ export class PriestAttackStrategy extends BaseAttackStrategy<Priest> {
         })
         if (entities.length == 0) return // No targets to attack
 
+        // Use target distribution if enabled
+        if (this.options.enableTargetDistribution) {
+            const distributor = this.botTargetDistributor.get(bot.id)
+            if (distributor) {
+                const target = distributor.selectTarget(bot.id, entities, (e) => bot.canKillInOneShot(e))
+                if (!target) return // No suitable target for this bot
+
+                const canKill = bot.canKillInOneShot(target)
+                if (canKill) {
+                    this.preventOverkill(bot, target)
+                    distributor.release(target.id) // Release lock after confirming kill
+                }
+                if (!canKill || entities.length > 1) {
+                    this.getEnergizeFromOther(bot).catch(suppress_errors)
+                }
+
+                if (!this.options.disableCurse) this.applyCurse(bot, target).catch(suppress_errors)
+
+                return bot.basicAttack(target.id)
+            }
+        }
+
         // Prioritize the entities
         const targets = new FastPriorityQueue<Entity>(priority)
         for (const entity of entities) targets.add(entity)
