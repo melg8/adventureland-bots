@@ -5,4 +5,5 @@ List of ideas what to implement for local server multiparty bots activites.
 2. Enable merchants
 3. Implement support for multiple different parties from same bot instance
 4. Remove need for character id/userId/userAuth explicitly stated in accounts
-5. modify crab farming center spot
+5. Modify crab farming center spot
+6. Add farm of mvampire/fvampire/skeletor/phoenix and such.
