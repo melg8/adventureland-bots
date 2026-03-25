@@ -293,33 +293,43 @@ class TargetDistributor {
 }
 
 /**
- * Time-based attack distributor
- * Ensures bots attack in staggered intervals rather than all at once
+ * Flexible time-based attack distributor
+ * Allows faster bots to attack more often while preventing simultaneous volleys
  * 
- * Example: 6 bots with 960ms attack interval
- * - Cycle = 960ms (time for one bot to attack again)
- * - Slot size = 960ms / 6 = 160ms (time between each bot's attack)
- * - Bot 0: 0-160ms, 960-1120ms, 1920-2080ms...
- * - Bot 1: 160-320ms, 1120-1280ms, 2080-2240ms...
- * - Bot 2: 320-480ms, 1280-1440ms, 2240-2400ms...
- * - etc.
+ * Rules:
+ * 1. Each bot has its own attack cooldown based on its attack speed
+ * 2. Minimum delay between ANY bot's attacks (prevents volleys)
+ * 3. Faster bots can attack more frequently if conditions allow
  */
 class TimeDistributor {
     private botIds: string[]
-    private attackInterval: number
-    private slotSize: number
+    private botAttackIntervals = new Map<string, number>() // Per-bot attack interval
     private lastAttackTime = new Map<string, number>()
-    // Use a fixed baseTime so all bots are synchronized regardless of when they're created
+    private lastAnyBotAttackTime: number // Track when ANY bot last attacked
+    private minDelayBetweenAttacks: number // Minimum ms between any two bot attacks
     private static readonly BASE_TIME = Date.now()
     private debugLogTime = 0
 
-    constructor(botIds: string[], attackInterval: number) {
+    constructor(botIds: string[], attackInterval: number, minDelayBetweenAttacks: number = 100) {
         // Sort bot IDs for deterministic ordering
         this.botIds = [...botIds].sort()
-        this.attackInterval = attackInterval
-        // Each bot gets a time slot = attackInterval / numBots
-        this.slotSize = Math.round(attackInterval / botIds.length)
-        console.log(`[TimeDistributor] Created: ${botIds.length} bots, attackInterval=${attackInterval}ms, slotSize=${this.slotSize}ms, cycle=${attackInterval}ms`)
+        this.minDelayBetweenAttacks = minDelayBetweenAttacks
+        // Initialize to current time so first attack check works correctly
+        this.lastAnyBotAttackTime = Date.now()
+        
+        // Use the same interval for all bots initially (will be overridden per-bot if needed)
+        for (const botId of this.botIds) {
+            this.botAttackIntervals.set(botId, attackInterval)
+        }
+        
+        console.log(`[TimeDistributor] Created: ${botIds.length} bots, avgInterval=${attackInterval}ms, minDelay=${minDelayBetweenAttacks}ms`)
+    }
+
+    /**
+     * Set individual bot's attack interval (call this if you know bot's actual attack speed)
+     */
+    setBotAttackInterval(botId: string, interval: number): void {
+        this.botAttackIntervals.set(botId, interval)
     }
 
     /**
@@ -327,9 +337,9 @@ class TimeDistributor {
      * Returns true if the bot can attack now
      * 
      * Rules:
-     * 1. Bot can only attack once per full cycle (attackInterval ms)
-     * 2. Bot should attack during its time slot if possible
-     * 3. If bot missed its slot, it can attack later in the cycle
+     * 1. Bot's personal cooldown must be ready (based on its attack speed)
+     * 2. At least minDelayBetweenAttacks ms must have passed since ANY bot attacked
+     * 3. On first attack, bot waits for its turn based on bot index
      */
     canAttack(botId: string): boolean {
         const botIndex = this.botIds.indexOf(botId)
@@ -337,40 +347,48 @@ class TimeDistributor {
 
         const now = Date.now()
         const lastAttack = this.lastAttackTime.get(botId) ?? 0
-        
-        // Calculate this bot's time slot within the cycle
-        const botSlotStart = (botIndex * this.slotSize)
-        const botSlotEnd = botSlotStart + this.slotSize
-        
-        // Calculate where we are in the current cycle
-        const cycleLength = this.attackInterval
-        const cyclePosition = (now - TimeDistributor.BASE_TIME) % cycleLength
-        
-        // Check if we're in this bot's slot
-        const isInSlot = cyclePosition >= botSlotStart && cyclePosition < botSlotEnd
-        
-        // Check if enough time has passed since last attack (must be >= full cycle)
-        // On first cycle (timeSinceLastAttack = Infinity), bot MUST wait for its slot
-        const timeSinceLastAttack = lastAttack > 0 ? now - lastAttack : Infinity
-        const enoughTimePassed = timeSinceLastAttack >= cycleLength
+        const botInterval = this.botAttackIntervals.get(botId) ?? this.botAttackIntervals.get(this.botIds[0])!
 
-        // Bot can attack ONLY if:
-        // 1. Enough time has passed since last attack (full cycle+)
-        // 2. We are currently in the bot's designated time slot
-        // This ensures bots attack in strict order, one per slot, never all at once
-        const canAttack = enoughTimePassed && isInSlot
-        
-        // Debug log (throttled to once per 20 seconds per bot)
+        // Rule 1: Check bot's personal cooldown
+        const timeSinceLastAttack = lastAttack > 0 ? now - lastAttack : Infinity
+        const personalCooldownReady = timeSinceLastAttack >= botInterval
+
+        // Rule 2: Check minimum delay since any bot attacked (prevents volleys)
+        const timeSinceAnyAttack = now - this.lastAnyBotAttackTime
+        const minDelayRespected = timeSinceAnyAttack >= this.minDelayBetweenAttacks
+
+        // Rule 3: On first cycle (never attacked), stagger initial attacks by bot index
+        // This prevents all bots from attacking simultaneously on first cycle
+        const isFirstCycle = lastAttack === 0
+        if (isFirstCycle) {
+            // Calculate time since first bot was allowed to attack
+            // Bot 0 can attack at t=0, Bot 1 at t=minDelay, Bot 2 at t=2*minDelay, etc.
+            const timeSinceCreation = now - this.lastAnyBotAttackTime
+            const expectedFirstAttackTime = botIndex * this.minDelayBetweenAttacks
+            const canFirstAttack = timeSinceCreation >= expectedFirstAttackTime
+            
+            const canAttack = canFirstAttack && minDelayRespected
+            
+            // Debug log for first cycle
+            if (now - this.debugLogTime > 20000) {
+                this.debugLogTime = now
+                console.log(`[TimeDistributor] ${botId} (idx=${botIndex}): firstCycle=true, timeSinceCreation=${Math.round(timeSinceCreation)}ms, expected=${expectedFirstAttackTime}ms, minDelay=${Math.round(timeSinceAnyAttack)}ms, canAttack=${canAttack}`)
+            }
+            
+            return canAttack
+        }
+
+        // Normal cycle: personal cooldown + minimum delay
+        const canAttack = personalCooldownReady && minDelayRespected
+
+        // Debug log (throttled)
         if (now - this.debugLogTime > 20000) {
             this.debugLogTime = now
-            const timeUntilNext = this.getTimeUntilNextSlot(botId)
-            console.log(`[TimeDistributor] ${botId} (idx=${botIndex}): pos=${cyclePosition}ms, slot=${botSlotStart}-${botSlotEnd}ms, inSlot=${isInSlot}, timeSinceLast=${Math.round(timeSinceLastAttack)}ms, canAttack=${canAttack}`)
+            const timeUntilPersonal = Math.max(0, botInterval - timeSinceLastAttack)
+            const timeUntilMinDelay = Math.max(0, this.minDelayBetweenAttacks - timeSinceAnyAttack)
+            console.log(`[TimeDistributor] ${botId}: personal=${Math.round(timeSinceLastAttack)}/${botInterval}ms (${Math.round(timeUntilPersonal)}ms), minDelay=${Math.round(timeSinceAnyAttack)}/${this.minDelayBetweenAttacks}ms (${Math.round(timeUntilMinDelay)}ms), canAttack=${canAttack}`)
         }
-        
-        if (!canAttack && cyclePosition >= botSlotStart && cyclePosition < botSlotEnd + 50) {
-            // Only log WAITING when bot is close to or in its slot
-            console.log(`[TimeDistributor] ${botId}: WAITING (pos=${cyclePosition}ms, slot=${botSlotStart}-${botSlotEnd}ms, wait=${this.getTimeUntilNextSlot(botId)}ms)`)
-        }
+
         return canAttack
     }
 
@@ -380,28 +398,31 @@ class TimeDistributor {
     recordAttack(botId: string): void {
         const now = Date.now()
         this.lastAttackTime.set(botId, now)
+        this.lastAnyBotAttackTime = now // Always update to current time
+        
         const botIndex = this.botIds.indexOf(botId)
-        const cyclePosition = (now - TimeDistributor.BASE_TIME) % this.attackInterval
-        console.log(`[TimeDistributor] ${botId} (idx=${botIndex}): ATTACK at ${cyclePosition}ms (slot ${botIndex * this.slotSize}-${(botIndex + 1) * this.slotSize}ms)`)
+        const botInterval = this.botAttackIntervals.get(botId) ?? 0
+        console.log(`[TimeDistributor] ${botId} (idx=${botIndex}): ATTACK (interval=${botInterval}ms)`)
     }
 
     /**
-     * Get the time until this bot's next attack slot
+     * Get the time until this bot can attack next
      */
-    getTimeUntilNextSlot(botId: string): number {
+    getTimeUntilNextAttack(botId: string): number {
         const botIndex = this.botIds.indexOf(botId)
         if (botIndex === -1) return 0
 
         const now = Date.now()
-        const cycleLength = this.attackInterval
-        const cyclePosition = (now - TimeDistributor.BASE_TIME) % cycleLength
-        const botSlotStart = (botIndex * this.slotSize)
+        const lastAttack = this.lastAttackTime.get(botId) ?? 0
+        const botInterval = this.botAttackIntervals.get(botId) ?? 0
         
-        if (cyclePosition < botSlotStart) {
-            return botSlotStart - cyclePosition
-        } else {
-            return cycleLength - cyclePosition + botSlotStart
-        }
+        // Time until personal cooldown
+        const personalCooldown = Math.max(0, botInterval - (now - lastAttack))
+        
+        // Time until minimum delay is satisfied
+        const minDelayTime = Math.max(0, this.minDelayBetweenAttacks - (now - this.lastAnyBotAttackTime))
+        
+        return Math.max(personalCooldown, minDelayTime)
     }
 }
 
@@ -415,6 +436,7 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
     protected botEnsureEquipped = new Map<string, EnsureEquipped>()
     protected botTargetDistributor = new Map<string, TargetDistributor>()
     protected botTimeDistributor = new Map<string, TimeDistributor>()
+    protected sharedTimeDistributor: TimeDistributor | null = null // Single shared instance for all bots
 
     protected options: BaseAttackStrategyOptions
 
@@ -476,28 +498,39 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
         }
 
         // Initialize time distributor for this bot if enabled
-        if (this.options.enableTimeDistribution && !this.botTimeDistributor.has(bot.id)) {
+        // Create ONE shared instance for all bots (not per-bot)
+        if (this.options.enableTimeDistribution && !this.sharedTimeDistributor) {
             // Get all current bot IDs from contexts
             const botIds = this.options.contexts.map((c) => c.bot.id).sort()
+
+            // Calculate attack interval for EACH bot based on its attack speed (frequency)
+            // frequency = attacks per second, so interval = 1000 / frequency
+            const minDelayBetweenAttacks = 100 // Minimum 100ms between any two bot attacks
             
-            // Calculate attack interval based on AVERAGE attack speed of all bots
-            // This ensures all bots use the same interval and stay synchronized
+            // Calculate intervals for all bots
             const attackIntervals = this.options.contexts.map((c) => {
                 const attacksPerSecond = c.bot.frequency || 1
                 return Math.round(1000 / attacksPerSecond)
             })
             const avgAttackInterval = Math.round(attackIntervals.reduce((a, b) => a + b, 0) / attackIntervals.length)
-            
-            // Use average interval for all bots to keep them synchronized
-            const attackInterval = avgAttackInterval
 
-            // Create distributor for this bot
-            this.botTimeDistributor.set(
-                bot.id,
-                new TimeDistributor(botIds, attackInterval),
-            )
+            // Create ONE shared distributor
+            this.sharedTimeDistributor = new TimeDistributor(botIds, avgAttackInterval, minDelayBetweenAttacks)
             
-            console.log(`[TimeDistributor] ${bot.id}: Initialized with ${botIds.length} bots, attackInterval=${attackInterval}ms (avg of [${attackIntervals.join(', ')}]ms)`)
+            // Set individual attack intervals for each bot based on their actual attack speed
+            for (const context of this.options.contexts) {
+                const botId = context.bot.id
+                const attacksPerSecond = context.bot.frequency || 1
+                const botInterval = Math.round(1000 / attacksPerSecond)
+                this.sharedTimeDistributor.setBotAttackInterval(botId, botInterval)
+            }
+
+            console.log(`[TimeDistributor] Shared: ${botIds.length} bots, avgInterval=${avgAttackInterval}ms, minDelay=${minDelayBetweenAttacks}ms (intervals: [${attackIntervals.join(', ')}]ms)`)
+        }
+
+        // Store reference to shared distributor for this bot
+        if (this.options.enableTimeDistribution && this.sharedTimeDistributor) {
+            this.botTimeDistributor.set(bot.id, this.sharedTimeDistributor)
         }
 
         if (!this.options.disableKillSteal && !this.options.disableZapper) {
