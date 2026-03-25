@@ -183,14 +183,17 @@ const getReplenishablesStrategy = new GetReplenishablesStrategy({
 })
 const itemStrategy = new ItemStrategy({ contexts: CONTEXTS, itemConfig: CRABRAVE_ITEM_CONFIG })
 const magiportStrategy = new MagiportOthersSmartMovingToUsStrategy(CONTEXTS)
-const moveStrategy = new ImprovedMoveStrategy("crab")
+
+const monsterToFarm = "snake";
+
+const moveStrategy = new ImprovedMoveStrategy(monsterToFarm)
 const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackStrategy<PingCompensatedCharacter> } = {
-    mage: new MageAttackStrategy({ contexts: CONTEXTS, type: "crab" }),
-    paladin: new PaladinAttackStrategy({ contexts: CONTEXTS, type: "crab" }),
-    priest: new PriestAttackStrategy({ contexts: CONTEXTS, disableCurse: true, type: "crab" }),
-    ranger: new RangerAttackStrategy({ contexts: CONTEXTS, disableHuntersMark: true, type: "crab" }),
-    rogue: new RogueAttackStrategy({ contexts: CONTEXTS, type: "crab" }),
-    warrior: new WarriorAttackStrategy({ contexts: CONTEXTS, disableAgitate: true, type: "crab" })
+    mage: new MageAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm }),
+    paladin: new PaladinAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm }),
+    priest: new PriestAttackStrategy({ contexts: CONTEXTS, disableCurse: true, type: monsterToFarm }),
+    ranger: new RangerAttackStrategy({ contexts: CONTEXTS, disableHuntersMark: true, type: monsterToFarm }),
+    rogue: new RogueAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm }),
+    warrior: new WarriorAttackStrategy({ contexts: CONTEXTS, disableAgitate: true, type: monsterToFarm })
 }
 
 const partyAcceptStrategy =
@@ -244,9 +247,10 @@ const contextsLogic = async () => {
                 if (numHas > (numHold / 4)) continue
                 const numWant = numHold - numHas
                 if (!context.bot.canBuy(item, { ignoreLocation: true, quantity: numWant })) continue
-
+                
+                console.info(`swapping for replenish for bot: ${context.bot.name}`)
                 swapStrategies(context, [getReplenishablesStrategy])
-                continue
+                return
             }
 
             swapStrategies(context, [moveStrategy, attackStrategies[context.bot.ctype]])
