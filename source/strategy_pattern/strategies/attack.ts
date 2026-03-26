@@ -22,6 +22,9 @@ import { suppress_errors } from "../logging.js"
 import { GenerateEnsureEquipped, generateEnsureEquipped } from "../setups/equipment.js"
 import TTLCache from "@isaacs/ttlcache"
 
+// Debug logging flag - set to true to enable verbose debugging
+const DEBUG = false
+
 export type EnsureEquippedSlot = {
     name: ItemName
     filters?: LocateItemFilters
@@ -238,7 +241,7 @@ class TargetDistributor {
 
         // Debug log entity list and hash assignments (throttled to once per 5 seconds)
         const now = Date.now()
-        if (now - this.lastDebugLog > 5000) {
+        if (DEBUG && now - this.lastDebugLog > 5000) {
             this.lastDebugLog = now
             console.log(`[TargetDistributor] ${botId}: ${entities.length} entities, bots: [${this.botIds.join(', ')}]`)
             for (const entity of sortedEntities.slice(0, 3)) { // Show only first 3
@@ -321,8 +324,10 @@ class TimeDistributor {
         for (const botId of this.botIds) {
             this.botAttackIntervals.set(botId, attackInterval)
         }
-        
-        console.log(`[TimeDistributor] Created: ${botIds.length} bots, avgInterval=${attackInterval}ms, minDelay=${minDelayBetweenAttacks}ms`)
+
+        if (DEBUG) {
+            console.log(`[TimeDistributor] Created: ${botIds.length} bots, avgInterval=${attackInterval}ms, minDelay=${minDelayBetweenAttacks}ms`)
+        }
     }
 
     /**
@@ -366,15 +371,15 @@ class TimeDistributor {
             const timeSinceCreation = now - this.lastAnyBotAttackTime
             const expectedFirstAttackTime = botIndex * this.minDelayBetweenAttacks
             const canFirstAttack = timeSinceCreation >= expectedFirstAttackTime
-            
+
             const canAttack = canFirstAttack && minDelayRespected
-            
+
             // Debug log for first cycle
-            if (now - this.debugLogTime > 20000) {
+            if (DEBUG && now - this.debugLogTime > 20000) {
                 this.debugLogTime = now
                 console.log(`[TimeDistributor] ${botId} (idx=${botIndex}): firstCycle=true, timeSinceCreation=${Math.round(timeSinceCreation)}ms, expected=${expectedFirstAttackTime}ms, minDelay=${Math.round(timeSinceAnyAttack)}ms, canAttack=${canAttack}`)
             }
-            
+
             return canAttack
         }
 
@@ -382,7 +387,7 @@ class TimeDistributor {
         const canAttack = personalCooldownReady && minDelayRespected
 
         // Debug log (throttled)
-        if (now - this.debugLogTime > 20000) {
+        if (DEBUG && now - this.debugLogTime > 20000) {
             this.debugLogTime = now
             const timeUntilPersonal = Math.max(0, botInterval - timeSinceLastAttack)
             const timeUntilMinDelay = Math.max(0, this.minDelayBetweenAttacks - timeSinceAnyAttack)
@@ -399,10 +404,12 @@ class TimeDistributor {
         const now = Date.now()
         this.lastAttackTime.set(botId, now)
         this.lastAnyBotAttackTime = now // Always update to current time
-        
-        const botIndex = this.botIds.indexOf(botId)
-        const botInterval = this.botAttackIntervals.get(botId) ?? 0
-        console.log(`[TimeDistributor] ${botId} (idx=${botIndex}): ATTACK (interval=${botInterval}ms)`)
+
+        if (DEBUG) {
+            const botIndex = this.botIds.indexOf(botId)
+            const botInterval = this.botAttackIntervals.get(botId) ?? 0
+            console.log(`[TimeDistributor] ${botId} (idx=${botIndex}): ATTACK (interval=${botInterval}ms)`)
+        }
     }
 
     /**
@@ -516,7 +523,7 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
 
             // Create ONE shared distributor
             this.sharedTimeDistributor = new TimeDistributor(botIds, avgAttackInterval, minDelayBetweenAttacks)
-            
+
             // Set individual attack intervals for each bot based on their actual attack speed
             for (const context of this.options.contexts) {
                 const botId = context.bot.id
@@ -525,7 +532,9 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
                 this.sharedTimeDistributor.setBotAttackInterval(botId, botInterval)
             }
 
-            console.log(`[TimeDistributor] Shared: ${botIds.length} bots, avgInterval=${avgAttackInterval}ms, minDelay=${minDelayBetweenAttacks}ms (intervals: [${attackIntervals.join(', ')}]ms)`)
+            if (DEBUG) {
+                console.log(`[TimeDistributor] Shared: ${botIds.length} bots, avgInterval=${avgAttackInterval}ms, minDelay=${minDelayBetweenAttacks}ms (intervals: [${attackIntervals.join(', ')}]ms)`)
+            }
         }
 
         // Store reference to shared distributor for this bot
