@@ -89,8 +89,21 @@ export class BaseStrategy<Type extends PingCompensatedCharacter> implements Stra
 
         if (bot.c.town || bot.c.fishing || bot.c.mining || bot.c.pickpocket) {
             // Channeled skills will stop chanelling if you use a potion
-            if (hpRatio <= mpRatio) return bot.regenHP()
-            else return bot.regenMP()
+            if (hpRatio <= mpRatio) {
+                try {
+                    return await bot.regenHP()
+                } catch (e) {
+                    // Ignore not_ready and cooldown errors during startup
+                    if (!/not_ready|on cooldown/.test(e)) console.error(e)
+                }
+            } else {
+                try {
+                    return await bot.regenMP()
+                } catch (e) {
+                    // Ignore not_ready and cooldown errors during startup
+                    if (!/not_ready|on cooldown/.test(e)) console.error(e)
+                }
+            }
         }
 
         for (const potion of BaseStrategy.potions) {
@@ -125,19 +138,51 @@ export class BaseStrategy<Type extends PingCompensatedCharacter> implements Stra
 
         if (Math.abs(hpRatio - mpRatio) < 0.25) {
             // Our ratios are pretty similar, prefer both
-            if (maxGiveBothPotion)
-                return bot.usePotion(bot.locateItem(maxGiveBothPotion, bot.items, { returnLowestQuantity: true }))
+            if (maxGiveBothPotion) {
+                try {
+                    return await bot.usePotion(bot.locateItem(maxGiveBothPotion, bot.items, { returnLowestQuantity: true }))
+                } catch (e) {
+                    // Ignore not_ready and cooldown errors during startup
+                    if (!/not_ready|on cooldown/.test(e)) console.error(e)
+                }
+            }
         }
 
         if (hpRatio <= mpRatio) {
             // HP ratio is the same, or lower than the MP ratio, prefer HP
-            if (maxGiveHpPotion === "regen_hp") return bot.regenHP()
-            else return bot.usePotion(bot.locateItem(maxGiveHpPotion, bot.items, { returnLowestQuantity: true }))
+            if (maxGiveHpPotion === "regen_hp") {
+                try {
+                    return await bot.regenHP()
+                } catch (e) {
+                    // Ignore not_ready and cooldown errors during startup
+                    if (!/not_ready|on cooldown/.test(e)) console.error(e)
+                }
+            } else {
+                try {
+                    return await bot.usePotion(bot.locateItem(maxGiveHpPotion, bot.items, { returnLowestQuantity: true }))
+                } catch (e) {
+                    // Ignore not_ready and cooldown errors during startup
+                    if (!/not_ready|on cooldown/.test(e)) console.error(e)
+                }
+            }
         }
 
         // MP ratio is lower, prefer MP
-        if (maxGiveMpPotion === "regen_mp") return bot.regenMP()
-        else return bot.usePotion(bot.locateItem(maxGiveMpPotion, bot.items, { returnLowestQuantity: true }))
+        if (maxGiveMpPotion === "regen_mp") {
+            try {
+                return await bot.regenMP()
+            } catch (e) {
+                // Ignore not_ready and cooldown errors during startup
+                if (!/not_ready|on cooldown/.test(e)) console.error(e)
+            }
+        } else {
+            try {
+                return await bot.usePotion(bot.locateItem(maxGiveMpPotion, bot.items, { returnLowestQuantity: true }))
+            } catch (e) {
+                // Ignore not_ready and cooldown errors during startup
+                if (!/not_ready|on cooldown/.test(e)) console.error(e)
+            }
+        }
     }
 
     private async lootChest(bot: Type, chest: ChestData) {
