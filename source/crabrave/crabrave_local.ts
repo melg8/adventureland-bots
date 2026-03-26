@@ -74,6 +74,7 @@ const CRABRAVE_ITEM_CONFIG: ItemConfig = {
     "ringsj": { sell: true, sellPrice: "npc" },
     "hpamulet": { sell: true, sellPrice: "npc" },
     "hpbelt": { sell: true, sellPrice: "npc" },
+    "elixirluck": {hold: true, holdSlot: 37, replenish: 4},
     "hpot1": { hold: true, holdSlot: 39, replenish: 1000 },
     "mpot1": { hold: true, holdSlot: 38, replenish: 1000 },
     "tracker": { hold: true, holdSlot: 41 },
@@ -84,6 +85,7 @@ const CRABRAVE_ITEM_CONFIG: ItemConfig = {
 const REPLENISHABLES = new Map<ItemName, number>([
     ["hpot1", 2500],
     ["mpot1", 2500],
+    ["elixirluck", 4],
 ])
 
 const SERVER_REGION: ServerRegion = DEFAULT_REGION
@@ -184,7 +186,7 @@ const getReplenishablesStrategy = new GetReplenishablesStrategy({
 const itemStrategy = new ItemStrategy({ contexts: CONTEXTS, itemConfig: CRABRAVE_ITEM_CONFIG })
 const magiportStrategy = new MagiportOthersSmartMovingToUsStrategy(CONTEXTS)
 
-const monsterToFarm = "snake";
+const monsterToFarm = "armadillo";
 
 const moveStrategy = new ImprovedMoveStrategy(monsterToFarm)
 const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackStrategy<PingCompensatedCharacter> } = {
