@@ -185,7 +185,7 @@ const getReplenishablesStrategy = new GetReplenishablesStrategy({
 const itemStrategy = new ItemStrategy({ contexts: CONTEXTS, itemConfig: CRABRAVE_ITEM_CONFIG })
 const magiportStrategy = new MagiportOthersSmartMovingToUsStrategy(CONTEXTS)
 
-const monsterToFarm = "armadillo";
+const monsterToFarm = "crab";
 
 const moveStrategy = new ImprovedMoveStrategy(monsterToFarm)
 const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackStrategy<PingCompensatedCharacter> } = {
