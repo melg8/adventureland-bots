@@ -68,6 +68,66 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
         if (this.options.enableTargetDistribution) {
             const distributor = this.botTargetDistributor.get(bot.id)
             if (distributor) {
+                // Build multi-shot target pools even with target distribution
+                const threeShotTargets: Entity[] = []
+                const fiveShotTargets: Entity[] = []
+                
+                // Sort entities by ID for deterministic ordering
+                const sortedEntities = [...entities].sort((a, b) => a.id.localeCompare(b.id))
+                
+                for (const entity of sortedEntities) {
+                    if (this.options.disableMultiShot) continue
+                    
+                    // Check if we can kill it with 5shot
+                    if (entity.hp <= bot.calculateDamageRange(bot, "5shot")[0]) {
+                        fiveShotTargets.push(entity)
+                        threeShotTargets.push(entity)
+                    } else if (entity.hp <= bot.calculateDamageRange(bot, "3shot")[0]) {
+                        threeShotTargets.push(entity)
+                    }
+                }
+
+                // Try 5shot first if we have enough targets and can use it
+                if (!this.options.disableMultiShot && fiveShotTargets.length >= 5 && bot.canUse("5shot")) {
+                    const targetsToUse = fiveShotTargets.slice(0, 5)
+                    for (const entity of targetsToUse) {
+                        if (bot.canKillInOneShot(entity, "5shot")) {
+                            // Try to lock, but proceed even if locked by another bot (helping)
+                            distributor.tryLock(entity.id, bot.id)
+                        }
+                    }
+                    // Release locks after confirming kills
+                    for (const entity of targetsToUse) {
+                        if (bot.canKillInOneShot(entity, "5shot")) {
+                            this.preventOverkill(bot, entity)
+                            distributor.release(entity.id)
+                        }
+                    }
+                    this.getEnergizeFromOther(bot).catch(suppress_errors)
+                    return bot.fiveShot(targetsToUse[0].id, targetsToUse[1].id, targetsToUse[2].id, targetsToUse[3].id, targetsToUse[4].id)
+                }
+
+                // Try 3shot if we have enough targets and can use it
+                if (!this.options.disableMultiShot && threeShotTargets.length >= 3 && bot.canUse("3shot")) {
+                    const targetsToUse = threeShotTargets.slice(0, 3)
+                    for (const entity of targetsToUse) {
+                        if (bot.canKillInOneShot(entity, "3shot")) {
+                            // Try to lock, but proceed even if locked by another bot (helping)
+                            distributor.tryLock(entity.id, bot.id)
+                        }
+                    }
+                    // Release locks after confirming kills
+                    for (const entity of targetsToUse) {
+                        if (bot.canKillInOneShot(entity, "3shot")) {
+                            this.preventOverkill(bot, entity)
+                            distributor.release(entity.id)
+                        }
+                    }
+                    this.getEnergizeFromOther(bot).catch(suppress_errors)
+                    return bot.threeShot(targetsToUse[0].id, targetsToUse[1].id, targetsToUse[2].id)
+                }
+
+                // Fall back to single target attack
                 const target = distributor.selectTarget(bot.id, entities, (e) => bot.canKillInOneShot(e))
                 if (!target) return // No entities at all
 
