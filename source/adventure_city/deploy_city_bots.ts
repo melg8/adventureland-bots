@@ -1,4 +1,4 @@
-import AL, { CharacterType, ItemName, Mage, Paladin, PingCompensatedCharacter, Priest, Ranger, Rogue, ServerIdentifier, ServerRegion, Warrior } from "alclient"
+import AL, { CharacterType, ItemName, Mage, Merchant, Paladin, PingCompensatedCharacter, Priest, Ranger, Rogue, ServerIdentifier, ServerRegion, Warrior } from "alclient"
 import { AvoidStackingStrategy } from "../strategy_pattern/strategies/avoid_stacking.js"
 import { BaseStrategy } from "../strategy_pattern/strategies/base.js"
 import { BuyStrategy } from "../strategy_pattern/strategies/buy.js"
@@ -25,6 +25,9 @@ import { BaseAttackStrategy } from "../strategy_pattern/strategies/attack.js"
 import { DEFAULT_IDENTIFIER, DEFAULT_REGION } from "../base/defaults.js"
 import { AvoidDeathStrategy } from "../strategy_pattern/strategies/avoid_death.js"
 import { ItemConfig } from "../base/itemsNew.js"
+import { startMerchant as startMerchantStrategy, defaultNewMerchantStrategyOptions, NewMerchantStrategyOptions } from "../merchant/strategy.js"
+import { ToggleStandStrategy } from "../strategy_pattern/strategies/stand.js"
+import { TrackerStrategy } from "../strategy_pattern/strategies/tracker.js"
 
 import fs from "fs"
 import path from "path"
@@ -67,18 +70,33 @@ const ACCOUNTS_FOLDER = "accounts"
  * Item configuration for crab farming
  */
 const CRABRAVE_ITEM_CONFIG: ItemConfig = {
-    "cclaw": { sell: true, sellPrice: "npc" },
+    "cclaw": { 
+        hold: true, 
+        upgradeUntilLevel: 9,
+    },
     "computer": { hold: true, holdSlot: 40 },
-    "crabclaw": { sell: true, sellPrice: "npc" },
-    "ringsj": { sell: true, sellPrice: "npc" },
+    "crabclaw": { 
+        hold: true, 
+    },
+    "ringsj": {
+        hold: true,
+        upgradeUntilLevel: 4
+    },
     "hpamulet": { sell: true, sellPrice: "npc" },
     "hpbelt": { sell: true, sellPrice: "npc" },
     "elixirluck": {hold: true, holdSlot: 37, replenish: 4},
     "hpot1": { hold: true, holdSlot: 39, replenish: 1000 },
     "mpot1": { hold: true, holdSlot: 38, replenish: 1000 },
     "tracker": { hold: true, holdSlot: 41 },
-    "wcap": { sell: true, sellPrice: "npc" },
-    "wshoes": { sell: true, sellPrice: "npc" }
+    "wcap": { 
+        hold: true, 
+        sellPrice: "npc",
+        upgradeUntilLevel: 9
+    },
+    "wshoes": { 
+        hold: true,
+        upgradeUntilLevel: 9
+    }
 }
 
 const REPLENISHABLES = new Map<ItemName, number>([
@@ -197,6 +215,9 @@ const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackS
     warrior: new WarriorAttackStrategy({ contexts: CONTEXTS, disableAgitate: true, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true })
 }
 
+// Merchant configuration
+const MERCHANT_GOLD_TO_HOLD = 3_000_000
+
 const partyAcceptStrategy =
     new AcceptPartyRequestStrategy(/** TODO: TEMP: Allow anyone to join { allowList: PARTY_ALLOWLIST } */)
 const partyHealStrategy = new PartyHealStrategy(CONTEXTS)
@@ -233,6 +254,11 @@ const contextsLogic = async () => {
                 continue
             }
 
+            // Merchants handle their own logic via NewMerchantStrategy
+            if (context.bot.ctype === "merchant") {
+                continue
+            }
+
             if (context.bot.S.holidayseason && !context.bot.s.holidayspirit) {
                 swapStrategies(context, [getHolidaySpiritStrategy])
                 continue
@@ -248,7 +274,7 @@ const contextsLogic = async () => {
                 if (numHas > (numHold / 4)) continue
                 const numWant = numHold - numHas
                 if (!context.bot.canBuy(item, { ignoreLocation: true, quantity: numWant })) continue
-                
+
                 console.info(`swapping for replenish for bot: ${context.bot.name}`)
                 swapStrategies(context, [getReplenishablesStrategy])
                 return
@@ -265,12 +291,17 @@ const contextsLogic = async () => {
 contextsLogic()
 
 async function startShared(context: Strategist<PingCompensatedCharacter>) {
+    // Merchants don't join parties or use these strategies
+    if (context.bot.ctype === "merchant") {
+        return
+    }
+
     context.applyStrategy(partyAcceptStrategy)
 
     if (context.bot.id !== partyRequestStrategy.partyLeader) {
         context.applyStrategy(partyRequestStrategy)
     }
-    
+
     context.applyStrategy(buyStrategy)
     context.applyStrategy(sellStrategy)
     context.applyStrategy(avoidStackingStrategy)
@@ -307,6 +338,43 @@ async function startRogue(context: Strategist<Rogue>) {
 async function startWarrior(context: Strategist<Warrior>) {
     startShared(context)
     context.applyStrategy(chargeStrategy)
+}
+
+async function startMerchant(context: Strategist<Merchant>) {
+    // Merchants don't use startShared - they have their own strategy
+    CONTEXTS.push(context)
+
+    const merchantFriends = CONTEXTS.filter(c => c.bot.ctype !== "merchant")
+    
+    console.log(`[MERCHANT] Starting merchant ${context.bot.name}`)
+    console.log(`[MERCHANT] Total CONTEXTS: ${CONTEXTS.length}`)
+    console.log(`[MERCHANT] Merchant friends (non-merchant): ${merchantFriends.length}`)
+    for (const friend of merchantFriends) {
+        console.log(`[MERCHANT]   - ${friend.bot.name} (${friend.bot.ctype}) on ${friend.bot.serverData?.region}/${friend.bot.serverData?.name}`)
+    }
+    console.log(`[MERCHANT] Merchant server: ${context.bot.serverData?.region}/${context.bot.serverData?.name}`)
+
+    const merchantOptions: NewMerchantStrategyOptions = {
+        contexts: merchantFriends,
+        defaultPosition: {
+            map: "main" as const,
+            x: 0,
+            y: 0,
+        },
+        goldToHold: MERCHANT_GOLD_TO_HOLD,
+        itemConfig: CRABRAVE_ITEM_CONFIG,
+
+        enableMluck: {
+            contexts: true,
+            others: true,
+            self: true,
+            travel: true,
+        },
+    }
+
+    startMerchantStrategy(context, merchantFriends, merchantOptions)
+
+    console.log(`[START] Started merchant: ${context.bot.name}`)
 }
 
 const stopCharacter = async (characterName: string) => {
@@ -399,6 +467,10 @@ const startCharacter = async (
                 bot = new AL.Warrior(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
                 break
             }
+            case "merchant": {
+                bot = new AL.Merchant(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
+                break
+            }
             default: {
                 throw new Error(`Unsupported character type: ${type}`)
             }
@@ -449,6 +521,11 @@ const startCharacter = async (
         case "warrior": {
             context = new Strategist<Warrior>(bot as Warrior, baseStrategy)
             startWarrior(context as Strategist<Warrior>).catch(console.error)
+            break
+        }
+        case "merchant": {
+            context = new Strategist<Merchant>(bot as Merchant, baseStrategy)
+            startMerchant(context as Strategist<Merchant>).catch(console.error)
             break
         }
     }
@@ -513,8 +590,9 @@ async function main() {
         }
     }
     
-    // Determine party leader
-    const partyLeader = allCharacters.find(c => c.isPartyLeader) || allCharacters[0]
+    // Determine party leader (exclude merchants)
+    const nonMerchantCharacters = allCharacters.filter(c => c.type !== "merchant")
+    const partyLeader = nonMerchantCharacters.find(c => c.isPartyLeader) || nonMerchantCharacters[0]
     if (partyLeader) {
         partyRequestStrategy.partyLeader = partyLeader.name
     }
@@ -538,7 +616,23 @@ async function main() {
 
     console.log("Starting characters...")
     console.log("")
-    for (const char of allCharacters) {
+    
+    // Start combat bots first, then merchant
+    // This ensures the merchant has contexts to work with when it starts
+    const combatCharacters = allCharacters.filter(c => c.type !== "merchant")
+    const merchantCharacters = allCharacters.filter(c => c.type === "merchant")
+    
+    console.log(`[STARTUP] Starting ${combatCharacters.length} combat bot(s) first...`)
+    for (const char of combatCharacters) {
+        try {
+            await startCharacter(char.credentials, char.name, char.type, char.id)
+        } catch (e) {
+            console.error(`[ERROR] Failed to start ${char.name}:`, e)
+        }
+    }
+    
+    console.log(`[STARTUP] Starting ${merchantCharacters.length} merchant(s)...`)
+    for (const char of merchantCharacters) {
         try {
             await startCharacter(char.credentials, char.name, char.type, char.id)
         } catch (e) {
