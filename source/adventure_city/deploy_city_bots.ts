@@ -205,7 +205,9 @@ const magiportStrategy = new MagiportOthersSmartMovingToUsStrategy(CONTEXTS)
 
 const monsterToFarm = "crab";
 
-const moveStrategy = new ImprovedMoveStrategy(monsterToFarm)
+const moveStrategy = new ImprovedMoveStrategy(monsterToFarm, {
+    idlePosition: { map: "main", x: -1111, y: -130 }
+})
 const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackStrategy<PingCompensatedCharacter> } = {
     mage: new MageAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
     paladin: new PaladinAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
