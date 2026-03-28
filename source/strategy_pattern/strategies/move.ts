@@ -318,6 +318,9 @@ export type ImprovedMoveStrategyOptions = {
         x?: number
         y?: number
     }
+
+    /** If true, bots will stack on top of each other instead of spreading out */
+    disableOffset?: boolean
 }
 
 export class ImprovedMoveStrategy implements Strategy<Character> {
@@ -443,7 +446,8 @@ export class ImprovedMoveStrategy implements Strategy<Character> {
             })
         } else if (lastD) {
             // Move towards center of closest spawn
-            bot.smartMove(offsetPositionParty(this.spawns[0], bot), {
+            const destination = this.options.disableOffset ? this.spawns[0] : offsetPositionParty(this.spawns[0], bot)
+            bot.smartMove(destination, {
                 costs: AVOID_DOORS_COSTS,
                 getWithin: AL.Tools.distance({ x: bot.x, y: bot.y }, this.spawns[0]) - (bot.range - lastD),
                 resolveOnFinalMoveStart: true,
@@ -452,7 +456,8 @@ export class ImprovedMoveStrategy implements Strategy<Character> {
             })
         } else if (!bot.smartMoving) {
             // No targets nearby, move to spawn
-            bot.smartMove(offsetPositionParty(this.spawns[0], bot), {
+            const destination = this.options.disableOffset ? this.spawns[0] : offsetPositionParty(this.spawns[0], bot)
+            bot.smartMove(destination, {
                 resolveOnFinalMoveStart: true,
                 useBlink: true,
             }).catch(() => {

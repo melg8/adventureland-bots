@@ -20,6 +20,7 @@ import { RangerAttackStrategy } from "../strategy_pattern/strategies/attack_rang
 import { RogueAttackStrategy } from "../strategy_pattern/strategies/attack_rogue.js"
 import { WarriorAttackStrategy } from "../strategy_pattern/strategies/attack_warrior.js"
 import { GetHolidaySpiritStrategy, GetReplenishablesStrategy, ImprovedMoveStrategy } from "../strategy_pattern/strategies/move.js"
+import { CitizenAuraEnhancedMoveStrategy } from "../strategy_pattern/strategies/citizen_aura.js"
 import { MoveToBankAndDepositStuffStrategy } from "../strategy_pattern/strategies/bank.js"
 import { BaseAttackStrategy } from "../strategy_pattern/strategies/attack.js"
 import { DEFAULT_IDENTIFIER, DEFAULT_REGION } from "../base/defaults.js"
@@ -205,8 +206,12 @@ const magiportStrategy = new MagiportOthersSmartMovingToUsStrategy(CONTEXTS)
 
 const monsterToFarm = "crab";
 
-const moveStrategy = new ImprovedMoveStrategy(monsterToFarm, {
-    idlePosition: { map: "main", x: -1111, y: -130 }
+const moveStrategy = new CitizenAuraEnhancedMoveStrategy({
+    farmMonster: monsterToFarm,
+    idlePosition: { map: "main", x: -1156, y: -92 },
+    npcName: "citizen0",
+    auraRange: 310,  // Server: distance < 320 gives aura, use 310 to ensure we get it
+    prioritizeAura: true
 })
 const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackStrategy<PingCompensatedCharacter> } = {
     mage: new MageAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
