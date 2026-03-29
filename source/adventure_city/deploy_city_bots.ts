@@ -25,7 +25,7 @@ import { MoveToBankAndDepositStuffStrategy } from "../strategy_pattern/strategie
 import { BaseAttackStrategy } from "../strategy_pattern/strategies/attack.js"
 import { DEFAULT_IDENTIFIER, DEFAULT_REGION } from "../base/defaults.js"
 import { AvoidDeathStrategy } from "../strategy_pattern/strategies/avoid_death.js"
-import { ItemConfig } from "../base/itemsNew.js"
+import { ItemConfig, SELL_TO_NPC } from "../base/itemsNew.js"
 import { startMerchant as startMerchantStrategy, defaultNewMerchantStrategyOptions, NewMerchantStrategyOptions } from "../merchant/strategy.js"
 import { ToggleStandStrategy } from "../strategy_pattern/strategies/stand.js"
 import { TrackerStrategy } from "../strategy_pattern/strategies/tracker.js"
@@ -71,31 +71,25 @@ const ACCOUNTS_FOLDER = "accounts"
  * Item configuration for crab farming
  */
 const CRABRAVE_ITEM_CONFIG: ItemConfig = {
-    "cclaw": { 
-        sell: true, 
-        sellPrice: "npc" 
+    "cclaw": {...SELL_TO_NPC,},
+    "ringsj": {...SELL_TO_NPC,},
+    "hpamulet": { ...SELL_TO_NPC, },
+    "hpbelt": {...SELL_TO_NPC,},
+    "wcap": {...SELL_TO_NPC,},
+    "wshoes": {...SELL_TO_NPC,},
+    "stinger": {...SELL_TO_NPC,},
+    "sshield": {
+        buy: true,
+        buyPrice: "ponty",
+        useScroll1FromLevel: 1,
+        useScroll2FromLevel: 6,
+        upgradeUntilLevel: 8,
     },
-    "computer": { hold: true, holdSlot: 40 },
-    "crabclaw": { 
-        hold: true, 
-    },
-    "ringsj": {
-        sell: true, sellPrice: "npc" 
-    },
-    "hpamulet": { sell: true, sellPrice: "npc" },
-    "hpbelt": { sell: true, sellPrice: "npc" },
     "elixirluck": {hold: true, holdSlot: 37, replenish: 4},
     "hpot1": { hold: true, holdSlot: 39, replenish: 2000 },
     "mpot1": { hold: true, holdSlot: 38, replenish: 2000 },
+    "computer": { hold: true, holdSlot: 40 },
     "tracker": { hold: true, holdSlot: 41 },
-    "wcap": { 
-        sell: true, 
-        sellPrice: "npc"
-    },
-    "wshoes": { 
-        sell: true,
-        sellPrice: "npc"
-    }
 }
 
 const REPLENISHABLES = new Map<ItemName, number>([
@@ -199,7 +193,10 @@ const getReplenishablesStrategy = new GetReplenishablesStrategy({
     contexts: CONTEXTS,
     replenishables: REPLENISHABLES
 })
-const itemStrategy = new ItemStrategy({ contexts: CONTEXTS, itemConfig: CRABRAVE_ITEM_CONFIG })
+// Item strategies - separate for fighters (with transfer) and merchant (without transfer)
+// Merchant name will be set dynamically when known
+let fighterItemStrategy: ItemStrategy<PingCompensatedCharacter>
+let merchantItemStrategy: ItemStrategy<PingCompensatedCharacter>
 const magiportStrategy = new MagiportOthersSmartMovingToUsStrategy(CONTEXTS)
 
 const monsterToFarm = "armadillo";
@@ -315,7 +312,9 @@ async function startShared(context: Strategist<PingCompensatedCharacter>) {
     context.applyStrategy(avoidDeathStrategy)
     context.applyStrategy(respawnStrategy)
     context.applyStrategy(elixirStrategy)
-    context.applyStrategy(itemStrategy)
+    if (fighterItemStrategy) {
+        context.applyStrategy(fighterItemStrategy)
+    }
     CONTEXTS.push(context)
 }
 
@@ -352,7 +351,7 @@ async function startMerchant(context: Strategist<Merchant>) {
     CONTEXTS.push(context)
 
     const merchantFriends = CONTEXTS.filter(c => c.bot.ctype !== "merchant")
-    
+
     console.log(`[MERCHANT] Starting merchant ${context.bot.name}`)
     console.log(`[MERCHANT] Total CONTEXTS: ${CONTEXTS.length}`)
     console.log(`[MERCHANT] Merchant friends (non-merchant): ${merchantFriends.length}`)
@@ -360,6 +359,26 @@ async function startMerchant(context: Strategist<Merchant>) {
         console.log(`[MERCHANT]   - ${friend.bot.name} (${friend.bot.ctype}) on ${friend.bot.serverData?.region}/${friend.bot.serverData?.name}`)
     }
     console.log(`[MERCHANT] Merchant server: ${context.bot.serverData?.region}/${context.bot.serverData?.name}`)
+
+    // Create item strategies now that we know the merchant name
+    // Fighters transfer shields to the merchant
+    fighterItemStrategy = new ItemStrategy({ 
+        contexts: CONTEXTS, 
+        itemConfig: CRABRAVE_ITEM_CONFIG,
+        transferItemsTo: context.bot.name  // Transfer shields to merchant
+    })
+    // Merchant doesn't transfer items, just upgrades and banks them
+    merchantItemStrategy = new ItemStrategy({ 
+        contexts: CONTEXTS, 
+        itemConfig: CRABRAVE_ITEM_CONFIG
+    })
+    
+    // Apply fighter item strategy to all existing fighter contexts
+    for (const ctx of CONTEXTS) {
+        if (ctx.bot.ctype !== "merchant") {
+            ctx.applyStrategy(fighterItemStrategy)
+        }
+    }
 
     const merchantOptions: NewMerchantStrategyOptions = {
         contexts: merchantFriends,
@@ -380,6 +399,9 @@ async function startMerchant(context: Strategist<Merchant>) {
     }
 
     startMerchantStrategy(context, merchantFriends, merchantOptions)
+
+    // Apply merchant item strategy to the merchant
+    context.applyStrategy(merchantItemStrategy)
 
     console.log(`[START] Started merchant: ${context.bot.name}`)
 }

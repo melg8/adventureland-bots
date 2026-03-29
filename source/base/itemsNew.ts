@@ -110,7 +110,7 @@ export type CombinedConfig = BuyConfig &
     UpgradeConfig
 export type ItemConfig = Partial<Record<ItemName, CombinedConfig>>
 
-const SELL_TO_NPC: SellConfig = {
+export const SELL_TO_NPC: SellConfig = {
     sell: true,
     sellPrice: "npc",
 }
