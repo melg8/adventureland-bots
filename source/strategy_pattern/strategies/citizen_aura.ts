@@ -90,7 +90,7 @@ export class CitizenAuraMoveStrategy implements Strategy<Character> {
         // NPC names in the game are prefixed with $ (e.g., Kane -> $Kane)
         const fixedName = npcData.name?.startsWith('$') ? npcData.name : `$${npcData.name}`
 
-        console.log(`[${bot.name}] Looking for NPC: ${fixedName} (from npcName: ${npcName})`)
+        // console.log(`[${bot.name}] Looking for NPC: ${fixedName} (from npcName: ${npcName})`)
 
         // Look for the NPC in visible players
         const npc = bot.players.get(fixedName)
@@ -109,12 +109,27 @@ export class CitizenAuraMoveStrategy implements Strategy<Character> {
                         x: npc.x + this.options.auraRange * Math.cos(angle),
                         y: npc.y + this.options.auraRange * Math.sin(angle),
                     }
-                    
-                    console.log(`[${bot.name}] Moving to aura boundary at (${targetPos.x.toFixed(1)}, ${targetPos.y.toFixed(1)})`)
-                    
-                    await bot.move(targetPos.x, targetPos.y, {
-                        resolveOnStart: true,
-                    })
+
+                    // console.log(`[${bot.name}] Moving to aura boundary at (${targetPos.x.toFixed(1)}, ${targetPos.y.toFixed(1)})`)
+
+                    // Check if we can walk directly to the target
+                    if (AL.Pathfinder.canWalkPath(bot, targetPos)) {
+                        await bot.move(targetPos.x, targetPos.y, {
+                            resolveOnStart: true,
+                        })
+                    } else {
+                        // Can't walk directly - use smart movement to find a path
+                        // console.log(`[${bot.name}] Direct path blocked, using smartMove`)
+                        await bot.smartMove(npc, {
+                            getWithin: this.options.auraRange,
+                            resolveOnFinalMoveStart: true,
+                            useBlink: true,
+                            stopIfTrue: async () => {
+                                // Stop if we got the aura buff
+                                return !!bot.s.citizen0aura
+                            },
+                        })
+                    }
                 } else {
                     // Use smart movement - avoids walls
                     await bot.smartMove(npc, {
@@ -131,8 +146,8 @@ export class CitizenAuraMoveStrategy implements Strategy<Character> {
             return
         }
 
-        console.log(`[${bot.name}] NPC ${fixedName} not found in visible players`)
-        console.log(`[${bot.name}] Visible players:`, [...bot.players.keys()].join(', '))
+        // console.log(`[${bot.name}] NPC ${fixedName} not found in visible players`)
+        // console.log(`[${bot.name}] Visible players:`, [...bot.players.keys()].join(', '))
 
         // Look for NPC in server data (S object)
         // citizen0 should be listed there if on the same map
@@ -142,7 +157,7 @@ export class CitizenAuraMoveStrategy implements Strategy<Character> {
                 if (npcSData.name === fixedName && npcSData.x !== undefined && npcSData.y !== undefined) {
                     const npcPos = { map: bot.map, x: npcSData.x, y: npcSData.y }
                     const distance = AL.Tools.distance(bot, npcPos)
-                    console.log(`[${bot.name}] Found NPC ${fixedName} in server data at distance ${distance.toFixed(1)}`)
+                    // console.log(`[${bot.name}] Found NPC ${fixedName} in server data at distance ${distance.toFixed(1)}`)
                     
                     if (distance > this.options.auraRange) {
                         if (this.options.directMovement) {
@@ -153,12 +168,27 @@ export class CitizenAuraMoveStrategy implements Strategy<Character> {
                                 x: npcPos.x + this.options.auraRange * Math.cos(angle),
                                 y: npcPos.y + this.options.auraRange * Math.sin(angle),
                             }
-                            
-                            console.log(`[${bot.name}] Moving to aura boundary at (${targetPos.x.toFixed(1)}, ${targetPos.y.toFixed(1)})`)
-                            
-                            await bot.move(targetPos.x, targetPos.y, {
-                                resolveOnStart: true,
-                            })
+
+                            // console.log(`[${bot.name}] Moving to aura boundary at (${targetPos.x.toFixed(1)}, ${targetPos.y.toFixed(1)})`)
+
+                            // Check if we can walk directly to the target
+                            if (AL.Pathfinder.canWalkPath(bot, targetPos)) {
+                                await bot.move(targetPos.x, targetPos.y, {
+                                    resolveOnStart: true,
+                                })
+                            } else {
+                                // Can't walk directly - use smart movement to find a path
+                                // console.log(`[${bot.name}] Direct path blocked, using smartMove`)
+                                await bot.smartMove(npcPos, {
+                                    getWithin: this.options.auraRange,
+                                    resolveOnFinalMoveStart: true,
+                                    useBlink: true,
+                                    stopIfTrue: async () => {
+                                        // Stop if we got the aura buff
+                                        return !!bot.s.citizen0aura
+                                    },
+                                })
+                            }
                         } else {
                             // Use smart movement - avoids walls
                             await bot.smartMove(npcPos, {
@@ -177,7 +207,7 @@ export class CitizenAuraMoveStrategy implements Strategy<Character> {
             }
         }
 
-        console.log(`[${bot.name}] NPC ${fixedName} not found in server data either`)
+        // console.log(`[${bot.name}] NPC ${fixedName} not found in server data either`)
 
         // NPC not found nearby - return to farm
         // Don't try database - it may not be connected

@@ -72,31 +72,29 @@ const ACCOUNTS_FOLDER = "accounts"
  */
 const CRABRAVE_ITEM_CONFIG: ItemConfig = {
     "cclaw": { 
-        hold: true, 
-        upgradeUntilLevel: 9,
+        sell: true, 
+        sellPrice: "npc" 
     },
     "computer": { hold: true, holdSlot: 40 },
     "crabclaw": { 
         hold: true, 
     },
     "ringsj": {
-        hold: true,
-        upgradeUntilLevel: 4
+        sell: true, sellPrice: "npc" 
     },
     "hpamulet": { sell: true, sellPrice: "npc" },
     "hpbelt": { sell: true, sellPrice: "npc" },
     "elixirluck": {hold: true, holdSlot: 37, replenish: 4},
-    "hpot1": { hold: true, holdSlot: 39, replenish: 1000 },
-    "mpot1": { hold: true, holdSlot: 38, replenish: 1000 },
+    "hpot1": { hold: true, holdSlot: 39, replenish: 2000 },
+    "mpot1": { hold: true, holdSlot: 38, replenish: 2000 },
     "tracker": { hold: true, holdSlot: 41 },
     "wcap": { 
-        hold: true, 
-        sellPrice: "npc",
-        upgradeUntilLevel: 9
+        sell: true, 
+        sellPrice: "npc"
     },
     "wshoes": { 
-        hold: true,
-        upgradeUntilLevel: 9
+        sell: true,
+        sellPrice: "npc"
     }
 }
 
@@ -204,15 +202,17 @@ const getReplenishablesStrategy = new GetReplenishablesStrategy({
 const itemStrategy = new ItemStrategy({ contexts: CONTEXTS, itemConfig: CRABRAVE_ITEM_CONFIG })
 const magiportStrategy = new MagiportOthersSmartMovingToUsStrategy(CONTEXTS)
 
-const monsterToFarm = "crab";
+const monsterToFarm = "cgoo";
 
-const moveStrategy = new CitizenAuraEnhancedMoveStrategy({
-    farmMonster: monsterToFarm,
-    idlePosition: { map: "main", x: -1156, y: -92 },
-    npcName: "citizen0",
-    auraRange: 310,  // Server: distance < 320 gives aura, use 310 to ensure we get it
-    prioritizeAura: true
-})
+const moveStrategy = new ImprovedMoveStrategy(monsterToFarm
+    // {
+    // farmMonster: monsterToFarm,
+    // idlePosition: { map: "main", x: -1156, y: -92 },
+    // npcName: "citizen0",
+    // auraRange: 310,  // Server: distance < 320 gives aura, use 310 to ensure we get it
+    // prioritizeAura: true
+// }
+)
 const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackStrategy<PingCompensatedCharacter> } = {
     mage: new MageAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
     paladin: new PaladinAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
