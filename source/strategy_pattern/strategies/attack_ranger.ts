@@ -77,12 +77,15 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
                 
                 for (const entity of sortedEntities) {
                     if (this.options.disableMultiShot) continue
-                    
+
                     // Check if we can kill it with 5shot
                     if (entity.hp <= bot.calculateDamageRange(bot, "5shot")[0]) {
                         fiveShotTargets.push(entity)
                         threeShotTargets.push(entity)
                     } else if (entity.hp <= bot.calculateDamageRange(bot, "3shot")[0]) {
+                        threeShotTargets.push(entity)
+                    } else if (entity.attack < 200) {
+                        // Low attack monsters are also viable for 3shot
                         threeShotTargets.push(entity)
                     }
                 }
@@ -166,6 +169,10 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
                 threeShotTargets.add(entity)
                 continue
             } else if (entity.hp <= bot.calculateDamageRange(bot, "3shot")[0]) {
+                threeShotTargets.add(entity)
+                addedToThreeShotTargets = true
+            } else if (entity.attack < 200) {
+                // Low attack monsters are also viable for 3shot
                 threeShotTargets.add(entity)
                 addedToThreeShotTargets = true
             }
@@ -398,6 +405,10 @@ export class RangerAttackStrategy extends BaseAttackStrategy<Ranger> {
                 threeShotTargets.add(entity)
                 continue
             } else if (entity.hp <= bot.calculateDamageRange(bot, "3shot")[0]) {
+                threeShotTargets.add(entity)
+                addedToThreeShotTargets = true
+            } else if (entity.attack < 200) {
+                // Low attack monsters are also viable for 3shot
                 threeShotTargets.add(entity)
                 addedToThreeShotTargets = true
             }

@@ -41,7 +41,7 @@ import { fileURLToPath } from "url"
 // Configure for LOCAL server (not Steam)
 AL.Game.setServer("http://127.0.0.1:8090")  // Your local server URL
 await Promise.all([AL.Game.loginJSONFile("../../credentials.json", false), AL.Game.getGData(true)])
-await AL.Pathfinder.prepare(AL.Game.G, { cheat: true })
+await AL.Pathfinder.prepare(AL.Game.G, { cheat: false })
 
 // await AL.Game.updateServersAndCharacters()
 
@@ -202,7 +202,7 @@ const getReplenishablesStrategy = new GetReplenishablesStrategy({
 const itemStrategy = new ItemStrategy({ contexts: CONTEXTS, itemConfig: CRABRAVE_ITEM_CONFIG })
 const magiportStrategy = new MagiportOthersSmartMovingToUsStrategy(CONTEXTS)
 
-const monsterToFarm = "cgoo";
+const monsterToFarm = "armadillo";
 
 const moveStrategy = new ImprovedMoveStrategy(monsterToFarm
     // {
