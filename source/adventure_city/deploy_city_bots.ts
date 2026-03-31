@@ -6,6 +6,7 @@ import { ChargeStrategy } from "../strategy_pattern/strategies/charge.js"
 import { Strategist, Strategy } from "../strategy_pattern/context.js"
 import { ElixirStrategy } from "../strategy_pattern/strategies/elixir.js"
 import { ItemStrategy } from "../strategy_pattern/strategies/item.js"
+import { getItemsToCompoundOrUpgrade } from "../base/items.js"
 import { MagiportOthersSmartMovingToUsStrategy } from "../strategy_pattern/strategies/magiport.js"
 import { AcceptPartyRequestStrategy, RequestPartyStrategy } from "../strategy_pattern/strategies/party.js"
 import { PartyHealStrategy } from "../strategy_pattern/strategies/partyheal.js"
@@ -382,6 +383,7 @@ async function startMerchant(context: Strategist<Merchant>) {
 
     const merchantOptions: NewMerchantStrategyOptions = {
         contexts: merchantFriends,
+        debug: true,
         defaultPosition: {
             map: "main" as const,
             x: 0,
@@ -498,6 +500,7 @@ const startCharacter = async (
             }
             case "merchant": {
                 bot = new AL.Merchant(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
+
                 break
             }
             default: {
@@ -505,6 +508,12 @@ const startCharacter = async (
             }
         }
         await bot.connect()
+
+        if (type === "merchant") {
+            console.log("Merchant items for upgrade:")
+            const okay = await getItemsToCompoundOrUpgrade(bot)
+            console.log(okay)
+        }
     } catch (e) {
         if (bot) bot.disconnect()
         console.error(`[ERROR] Failed to connect ${name}:`, e)

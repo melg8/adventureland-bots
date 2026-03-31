@@ -113,6 +113,9 @@ export const ITEM_UPGRADE_CONF: {
         // We craft with level 2 vit rings
         stop: 2,
     },
+    sshield: {
+        stop: 8,
+    },
 
     // Base armor
     coat: DESTROY,
@@ -236,11 +239,19 @@ const CACHED_EVERYTHING_COUNTS = new Map<string, ItemCount[]>()
  * @param owner The owner to get items for (e.g.: `bot.owner`)
  */
 export async function getItemCountsForEverything(owner: string): Promise<ItemCount[]> {
-    if (!AL.Database.connection) return []
+    console.log(`[getItemCountsForEverything] Called for owner: ${owner}`)
+    console.log(`[getItemCountsForEverything] AL.Database.connection: ${!!AL.Database.connection}`)
+    if (!AL.Database.connection) {
+        console.log(`[getItemCountsForEverything] Returning empty - no database connection`)
+        return []
+    }
     if (!checkOnlyEveryMS(`item_everything_counts_${owner}`, 60_000)) {
+        const cached = CACHED_EVERYTHING_COUNTS.get(owner)
+        console.log(`[getItemCountsForEverything] Returning cached result (within 60s cooldown): ${cached?.length || 0} items`)
         return CACHED_EVERYTHING_COUNTS.get(owner)
     }
 
+    console.log(`[getItemCountsForEverything] Running database aggregation...`)
     const counts = await AL.BankModel.aggregate([
         {
             /** Find our bank **/
@@ -405,6 +416,7 @@ export async function getItemCountsForEverything(owner: string): Promise<ItemCou
         },
     ])
 
+    console.log(`[getItemCountsForEverything] Aggregation complete: ${counts.length} items`)
     CACHED_EVERYTHING_COUNTS.set(owner, counts)
     return counts
 }
@@ -615,14 +627,21 @@ export function getNumOkayToCompoundOrUpgrade(item: ItemName, currentCount: numb
  * @returns A nested array of indexes to compound or upgrade. If there are 3 items in the sub array, you should compound. If it's one item, you should upgrade.
  */
 export async function getItemsToCompoundOrUpgrade(bot: PingCompensatedCharacter): Promise<number[][]> {
+    console.log(`[getItemsToCompoundOrUpgrade] Starting for bot ${bot.name}`)
+    
     if (!bot.map.startsWith("bank")) {
+        console.log(`[getItemsToCompoundOrUpgrade] Bot not at bank, moving to bank (current map: ${bot.map})`)
         await bot.closeMerchantStand()
         await bot.smartMove(bankingPosition)
+        console.log(`[getItemsToCompoundOrUpgrade] Arrived at bank (current map: ${bot.map})`)
     }
+    
     const counts = await getItemCountsForEverything(bot.owner)
-
+    console.log(`[getItemsToCompoundOrUpgrade] Total item counts retrieved: ${counts.length} unique item/level combinations`)
+    
     const hasOffering = bot.hasItem("offering")
     const hasOfferingP = bot.hasItem("offeringp")
+    console.log(`[getItemsToCompoundOrUpgrade] Has offering: ${hasOffering}, Has offeringp: ${hasOfferingP}`)
 
     const okayToCompoundOrUpgrade: {
         pack: BankPackName | "inventory"
@@ -636,14 +655,19 @@ export async function getItemsToCompoundOrUpgrade(bot: PingCompensatedCharacter)
     let currentCount: number
     for (let i = 0; i < counts.length; i++) {
         const count = counts[i]
-        if (count.level === undefined) continue // Not compoundable/upgradable
+        if (count.level === undefined) {
+            console.log(`[getItemsToCompoundOrUpgrade] SKIP [${count.name}]: level is undefined (not compoundable/upgradable)`)
+            continue // Not compoundable/upgradable
+        }
         if (count.name !== currentName) {
             currentName = count.name
             currentLevel = count.level
             currentCount = getNumOkayToCompoundOrUpgrade(currentName, count.inventorySpaces)
+            console.log(`[getItemsToCompoundOrUpgrade] NEW ITEM [${currentName}@${currentLevel}]: inventorySpaces=${count.inventorySpaces}, currentCount=${currentCount}`)
         } else {
             currentLevel = count.level
             currentCount += count.inventorySpaces
+            console.log(`[getItemsToCompoundOrUpgrade] SAME ITEM [${currentName}@${currentLevel}]: added ${count.inventorySpaces} spaces, currentCount=${currentCount}`)
         }
 
         if (currentCount > 0) {
@@ -655,32 +679,66 @@ export async function getItemsToCompoundOrUpgrade(bot: PingCompensatedCharacter)
             }
 
             const parseInventory = (inventory: ItemData[], inventoryName: BankPackName | "inventory") => {
+                console.log(`[getItemsToCompoundOrUpgrade] Parsing ${inventoryName} for [${currentName}@${currentLevel}], currentCount=${currentCount}`)
                 for (let i = 0; i < inventory.length; i++) {
                     const slot = inventory[i]
-                    if (!slot) continue // empty slot
-                    if (slot.name !== currentName) continue // different item
-                    if (slot.level > currentLevel) continue // different level
+                    if (!slot) {
+                        console.log(`[getItemsToCompoundOrUpgrade]   SKIP [${inventoryName}:${i}]: empty slot`)
+                        continue // empty slot
+                    }
+                    if (slot.name !== currentName) {
+                        console.log(`[getItemsToCompoundOrUpgrade]   SKIP [${inventoryName}:${i} ${slot.name}]: different item (expected ${currentName})`)
+                        continue // different item
+                    }
+                    if (slot.level > currentLevel) {
+                        console.log(`[getItemsToCompoundOrUpgrade]   SKIP [${inventoryName}:${i} ${slot.name}@${slot.level}]: level ${slot.level} > currentLevel ${currentLevel}`)
+                        continue // different level
+                    }
                     if (slot.level == currentLevel) {
                         // We want to withdraw only a certain amount of this level's items, and all items that are a lower level
-                        if (currentCount <= 0) continue
-                        else currentCount -= 1
+                        if (currentCount <= 0) {
+                            console.log(`[getItemsToCompoundOrUpgrade]   SKIP [${inventoryName}:${i} ${slot.name}@${slot.level}]: currentCount (${currentCount}) <= 0`)
+                            continue
+                        } else {
+                            currentCount -= 1
+                            console.log(`[getItemsToCompoundOrUpgrade]   currentCount decremented to ${currentCount} for [${inventoryName}:${i} ${slot.name}@${slot.level}]`)
+                        }
                     }
-                    if (slot.l) continue // It's locked!?
+                    if (slot.l) {
+                        console.log(`[getItemsToCompoundOrUpgrade]   SKIP [${inventoryName}:${i} ${slot.name}@${slot.level}]: item is locked`)
+                        continue // It's locked!?
+                    }
 
                     // Check if we want to upgrade it
                     if (
                         ITEM_UPGRADE_CONF[slot.name]?.stop !== undefined &&
                         slot.level >= ITEM_UPGRADE_CONF[slot.name].stop
-                    )
+                    ) {
+                        console.log(`[getItemsToCompoundOrUpgrade]   SKIP [${inventoryName}:${i} ${slot.name}@${slot.level}]: level ${slot.level} >= stop level ${ITEM_UPGRADE_CONF[slot.name].stop}`)
                         continue
+                    }
 
                     // Check if we want to destroy it
-                    if (ITEM_UPGRADE_CONF[slot.name]?.destroy && slot.level === 0) continue
+                    if (ITEM_UPGRADE_CONF[slot.name]?.destroy && slot.level === 0) {
+                        console.log(`[getItemsToCompoundOrUpgrade]   SKIP [${inventoryName}:${i} ${slot.name}@${slot.level}]: configured to destroy at level 0`)
+                        continue
+                    }
 
                     // Check if we have an offering to upgrade this item with. If we don't, leave it.
                     const offeringToUse = getOfferingToUse(slot)
-                    if (offeringToUse == "offering" && !hasOffering) continue
-                    if (offeringToUse == "offeringp" && !hasOfferingP) continue
+                    if (offeringToUse == "offering" && !hasOffering) {
+                        console.log(`[getItemsToCompoundOrUpgrade]   SKIP [${inventoryName}:${i} ${slot.name}@${slot.level}]: needs offering but don't have one`)
+                        continue
+                    }
+                    if (offeringToUse == "offeringp" && !hasOfferingP) {
+                        console.log(`[getItemsToCompoundOrUpgrade]   SKIP [${inventoryName}:${i} ${slot.name}@${slot.level}]: needs offeringp but don't have one`)
+                        continue
+                    }
+                    if (offeringToUse) {
+                        console.log(`[getItemsToCompoundOrUpgrade]   PASS [${inventoryName}:${i} ${slot.name}@${slot.level}]: will use ${offeringToUse}`)
+                    } else {
+                        console.log(`[getItemsToCompoundOrUpgrade]   PASS [${inventoryName}:${i} ${slot.name}@${slot.level}]: no offering needed`)
+                    }
 
                     okayToCompoundOrUpgrade.push({
                         pack: inventoryName,
@@ -700,6 +758,8 @@ export async function getItemsToCompoundOrUpgrade(bot: PingCompensatedCharacter)
                 const packName = pack as BankPackName
                 parseInventory(bot.bank[packName], packName)
             }
+        } else {
+            console.log(`[getItemsToCompoundOrUpgrade] SKIP processing [${currentName}@${currentLevel}]: currentCount (${currentCount}) <= 0`)
         }
     }
 

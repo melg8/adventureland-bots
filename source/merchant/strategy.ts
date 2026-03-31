@@ -239,6 +239,7 @@ export class MerchantStrategy implements Strategy<Merchant> {
         contexts: Strategist<PingCompensatedCharacter>[],
         options: MerchantMoveStrategyOptions = DEFAULT_MERCHANT_MOVE_STRATEGY_OPTIONS,
     ) {
+        console.log(`[${new Date().toISOString()}] DEBUG: merchant constructor being called`)
         this.contexts = contexts
         this.options = options
 
@@ -261,6 +262,7 @@ export class MerchantStrategy implements Strategy<Merchant> {
 
     protected async move(bot: Merchant) {
         try {
+            this.debug(bot, "Merchant move is called")
             // Respawn if dead
             if (bot.rip) return bot.respawn()
 
@@ -1039,7 +1041,14 @@ export class MerchantStrategy implements Strategy<Merchant> {
                         if (itemData.stat_type !== stat) {
                             // Go to the upgrade NPC
                             if (!bot.hasItem(["computer", "supercomputer"])) {
-                                await bot.smartMove("newupgrade", { getWithin: 25 })
+                                try {
+                                    console.log(`[BuyAndUpgrade] Moving to newupgrade NPC: from map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)}`)
+                                    await bot.smartMove("newupgrade", { getWithin: 25 })
+                                } catch (e) {
+                                    console.error(`[BuyAndUpgrade] Failed to move to newupgrade NPC: ${e}`)
+                                    console.error(`[BuyAndUpgrade] Current position: map=${bot.map}, x=${bot.x}, y=${bot.y}`)
+                                    return
+                                }
                             }
 
                             // Buy the correct stat scroll(s) and apply them
@@ -1068,7 +1077,22 @@ export class MerchantStrategy implements Strategy<Merchant> {
                             statType: stat,
                         })
                         if (potentialWithScroll !== undefined) {
-                            await bot.smartMove(getFor, { getWithin: 25 })
+                            try {
+                                console.log(`[BuyAndUpgrade] Moving to ${getFor.name} (${getFor.ctype}): from map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)} -> to map=${getFor.map}, x=${Math.round(getFor.x)}, y=${Math.round(getFor.y)}`)
+                                console.log(`[BuyAndUpgrade] Bot details: id=${bot.id}, name=${bot.name}, rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}, hp=${bot.hp}/${bot.max_hp}, mp=${bot.mp}/${bot.max_mp}`)
+                                console.log(`[BuyAndUpgrade] Bot inventory: slots=${bot.slots}, esize=${bot.esize}, gold=${bot.gold}`)
+                                console.log(`[BuyAndUpgrade] Target NPC: ${getFor.name} (${getFor.ctype}) at map=${getFor.map}, x=${Math.round(getFor.x)}, y=${Math.round(getFor.y)}`)
+                                await bot.smartMove(getFor, { getWithin: 25 })
+                            } catch (e) {
+                                console.error(`[BuyAndUpgrade] Failed to move to ${getFor.name}: ${e}`)
+                                console.error(`[BuyAndUpgrade] Stack trace: ${e.stack}`)
+                                console.error(`[BuyAndUpgrade] Destination: ${getFor.name} (${getFor.ctype}) at map=${getFor.map}, x=${getFor.x}, y=${getFor.y}`)
+                                console.error(`[BuyAndUpgrade] Current position: map=${bot.map}, x=${bot.x}, y=${bot.y}`)
+                                console.error(`[BuyAndUpgrade] Bot status: rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}, hp=${bot.hp}/${bot.max_hp}, mp=${bot.mp}/${bot.max_mp}`)
+                                console.error(`[BuyAndUpgrade] Bot inventory: slots=${bot.slots}, esize=${bot.esize}, gold=${bot.gold}`)
+                                console.error(`[BuyAndUpgrade] Bot target: ${bot.target}`)
+                                return
+                            }
                             if (AL.Tools.squaredDistance(bot, getFor) > AL.Constants.NPC_INTERACTION_DISTANCE_SQUARED) {
                                 // We're not near them, so they must have moved, return so we can try again next loop
                                 return
@@ -1090,19 +1114,50 @@ export class MerchantStrategy implements Strategy<Merchant> {
 
                     if (!bot.hasItem(item)) {
                         // Go to bank and see if we have one
-                        await bot.smartMove(bankingPosition)
+                        try {
+                            console.log(`[BuyAndUpgrade] Moving to bank: from map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)}`)
+                            console.log(`[BuyAndUpgrade] Bot details: id=${bot.id}, name=${bot.name}, rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}, hp=${bot.hp}/${bot.max_hp}, mp=${bot.mp}/${bot.max_mp}`)
+                            console.log(`[BuyAndUpgrade] Bot inventory: slots=${bot.slots}, esize=${bot.esize}, gold=${bot.gold}`)
+                            console.log(`[BuyAndUpgrade] Banking target: map=${bankingPosition.map}, x=${bankingPosition.x}, y=${bankingPosition.y}, type=${typeof bankingPosition === 'object' ? 'object' : 'string'}`)
+                            await bot.smartMove(bankingPosition)
+                        } catch (e) {
+                            console.error(`[BuyAndUpgrade] Failed to move to bank: ${e}`)
+                            console.error(`[BuyAndUpgrade] Stack trace: ${e.stack}`)
+                            console.error(`[BuyAndUpgrade] Destination: map=${bankingPosition.map}, x=${bankingPosition.x}, y=${bankingPosition.y}`)
+                            console.error(`[BuyAndUpgrade] Current position: map=${bot.map}, x=${bot.x}, y=${bot.y}`)
+                            console.error(`[BuyAndUpgrade] Bot status: rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}, hp=${bot.hp}/${bot.max_hp}, mp=${bot.mp}/${bot.max_mp}`)
+                            console.error(`[BuyAndUpgrade] Bot inventory: slots=${bot.slots}, esize=${bot.esize}, gold=${bot.gold}`)
+                            console.error(`[BuyAndUpgrade] Bot target: ${bot.target}`)
+                            return
+                        }
                         await withdrawItemFromBank(
                             bot,
                             item,
                             { locked: false },
                             { freeSpaces: 2, itemsToHold: this.options.itemsToHold },
                         )
-                        await bot.smartMove("main")
+                        try {
+                            console.log(`[BuyAndUpgrade] Moving to main: from map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)}`)
+                            await bot.smartMove("main")
+                        } catch (e) {
+                            console.error(`[BuyAndUpgrade] Failed to move to main: ${e}`)
+                            console.error(`[BuyAndUpgrade] Stack trace: ${e.stack}`)
+                            console.error(`[BuyAndUpgrade] Current position: map=${bot.map}, x=${bot.x}, y=${bot.y}`)
+                            console.error(`[BuyAndUpgrade] Bot status: rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}`)
+                            return
+                        }
                     }
 
                     // Go to the upgrade NPC
                     if (!bot.hasItem(["computer", "supercomputer"])) {
-                        await bot.smartMove("newupgrade", { getWithin: 25 })
+                        try {
+                            console.log(`[BuyAndUpgrade] Moving to newupgrade NPC: from map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)}`)
+                            await bot.smartMove("newupgrade", { getWithin: 25 })
+                        } catch (e) {
+                            console.error(`[BuyAndUpgrade] Failed to move to newupgrade NPC: ${e}`)
+                            console.error(`[BuyAndUpgrade] Current position: map=${bot.map}, x=${bot.x}, y=${bot.y}`)
+                            return
+                        }
                     }
 
                     // Buy if we need
@@ -1364,7 +1419,7 @@ export class MerchantStrategy implements Strategy<Merchant> {
 
     protected debug(bot: Merchant, message: string) {
         if (!this.options.debug) return
-        console.debug(`[${new Date().toISOString()}] [${bot.id}] DEBUG: ${message}`)
+        console.log(`[${new Date().toISOString()}] [${bot.id}] DEBUG: ${message}`)
     }
 
     protected async mluck(bot: Merchant) {
@@ -1439,6 +1494,8 @@ export type NewMerchantStrategyOptions = {
     itemConfig: ItemConfig
     /** The default position to stand when upgrading / waiting for things to do */
     defaultPosition: IPosition
+    /** If enabled, we will log debug messages */
+    debug?: true
     goldToHold?: number
     enableInstanceProvider?: {
         [T in MapName]?: {
@@ -1476,6 +1533,7 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
     protected options: NewMerchantStrategyOptions
 
     public constructor(options: NewMerchantStrategyOptions = defaultNewMerchantStrategyOptions) {
+        console.log(`[${new Date().toISOString()}] DEBUG: NewMerchantStrategy constructor being called`)
         this.options = options
 
         if (this.options.enableMluck) {
@@ -1494,7 +1552,18 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                 await this.equipBroom(bot).catch(console.error)
 
                 await this.joinGiveaways(bot).catch(console.error)
-                await this.doBanking(bot) // NOTE: Don't catch, we don't want to continue if banking fails
+                try {
+                    await this.doBanking(bot) // NOTE: Don't catch, we don't want to continue if banking fails
+                    // Banking succeeded, check for items to upgrade
+                    await this.processUpgradeCycle(bot).catch(console.error)
+                } catch (e) {
+                    console.error(`[MoveLoop] doBanking failed: ${e}`)
+                    console.error(`[MoveLoop] Stack trace: ${e.stack}`)
+                    console.error(`[MoveLoop] Bot: id=${bot.id}, name=${bot.name}, map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)}`)
+                    console.error(`[MoveLoop] Bot status: rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}`)
+                    // Banking failed - skip upgrade cycle, try again next loop
+                }
+                await this.goCheckInstances(bot).catch(console.error)
                 await this.goGetHolidaySpirit(bot).catch(console.error)
                 await this.goDeliverReplenishables(bot).catch(console.error)
                 await this.goDeliverUpgrades(bot).catch(console.error)
@@ -1505,11 +1574,19 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                 await this.goCraft(bot).catch(console.error)
                 await this.goExchange(bot).catch(console.error)
                 // TODO: Deal finder
-                await this.goCheckInstances(bot).catch(console.error)
                 await this.goSellItems(bot).catch(console.error)
                 await this.listForSale(bot).catch(console.error)
 
-                await bot.smartMove(this.options.defaultPosition)
+                try {
+                    console.log(`[MoveLoop] Moving to default position: from map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)} -> to map=${this.options.defaultPosition.map}, x=${this.options.defaultPosition.x}, y=${this.options.defaultPosition.y}`)
+                    await bot.smartMove(this.options.defaultPosition)
+                } catch (e) {
+                    console.error(`[MoveLoop] Failed to move to default position: ${e}`)
+                    console.error(`[MoveLoop] Stack trace: ${e.stack}`)
+                    console.error(`[MoveLoop] Destination: map=${this.options.defaultPosition.map}, x=${this.options.defaultPosition.x}, y=${this.options.defaultPosition.y}`)
+                    console.error(`[MoveLoop] Current position: map=${bot.map}, x=${bot.x}, y=${bot.y}`)
+                    console.error(`[MoveLoop] Bot status: rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}`)
+                }
             },
             interval: 1000,
         })
@@ -1552,6 +1629,316 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
         }
     }
 
+    protected debug(bot: Merchant, message: string) {
+        if (!this.options.debug) return
+        console.debug(`[${new Date().toISOString()}] [${bot.id}] DEBUG: ${message}`)
+    }
+
+    /**
+     * Move to the upgrade NPC location where we can buy scrolls and upgrade/compound items
+     */
+    protected async moveToUpgradeNpc(bot: Merchant): Promise<void> {
+        if (!bot.hasItem(["computer", "supercomputer"])) {
+            try {
+                this.debug(bot, `Moving to newupgrade NPC: from map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)}`)
+                await bot.smartMove("newupgrade", { getWithin: 25 })
+            } catch (e) {
+                this.debug(bot, `Failed to move to newupgrade NPC: ${e}`)
+                return
+            }
+        }
+    }
+
+    /**
+     * Calculate estimated gold needed for upgrade/compound of given items
+     */
+    protected calculateGoldNeededForUpgrade(bot: Merchant, itemsToUpgrade: string[]): number {
+        let totalNeeded = 0
+        
+        for (const itemStr of itemsToUpgrade) {
+            const [itemName, levelStr] = itemStr.split("@")
+            const level = parseInt(levelStr)
+            const itemConfig = this.options.itemConfig[itemName as ItemName]
+            
+            // Determine base scroll grade from item data (0=common, 1=high, 2=rare)
+            const gItem = AL.Game.G.items[itemName as ItemName]
+            const baseGrade = gItem?.grades?.[0] > 0 ? 0 : gItem?.grades?.[1] > 0 ? 1 : gItem?.grades?.[2] > 0 ? 2 : 0
+            let scroll = `scroll${baseGrade}` as ItemName
+            
+            // Determine scroll level and offering from config
+            let offering: ItemName = undefined
+            if (itemConfig) {
+                if (itemConfig.useOfferingFromLevel !== undefined && level >= itemConfig.useOfferingFromLevel) {
+                    offering = "offering"
+                } else if (itemConfig.usePrimlingFromLevel !== undefined && level >= itemConfig.usePrimlingFromLevel) {
+                    offering = "offeringp"
+                }
+                
+                if (itemConfig.useScroll3FromLevel !== undefined && level >= itemConfig.useScroll3FromLevel) {
+                    scroll = "scroll3"
+                } else if (itemConfig.useScroll2FromLevel !== undefined && level >= itemConfig.useScroll2FromLevel) {
+                    scroll = "scroll2"
+                } else if (itemConfig.useScroll1FromLevel !== undefined && level >= itemConfig.useScroll1FromLevel) {
+                    scroll = "scroll1"
+                }
+            }
+            
+            // Get actual NPC price for the scroll
+            const scrollG = AL.Game.G.items[scroll]
+            const scrollCost = scrollG?.g || 1000
+            totalNeeded += scrollCost
+            
+            // Add offering cost if needed
+            if (offering) {
+                const offeringG = AL.Game.G.items[offering]
+                const offeringCost = offeringG?.g || (offering === "offering" ? 50000 : 2500000)
+                totalNeeded += offeringCost
+            }
+        }
+        
+        return totalNeeded
+    }
+
+    /**
+     * Try to withdraw gold from bank if we don't have enough
+     * @returns true if we have enough gold or successfully withdrew, false if bank is empty
+     */
+    protected async ensureGoldForUpgrade(bot: Merchant, goldNeeded: number): Promise<boolean> {
+        if (bot.gold >= goldNeeded) {
+            return true // Already have enough
+        }
+
+        const goldBefore = bot.gold
+        const goldMissing = goldNeeded - bot.gold
+        this.debug(bot, `Need ${goldNeeded}g for upgrade, have ${bot.gold}g, missing ${goldMissing}g`)
+
+        // Go to bank NPC to check gold and withdraw
+        await bot.smartMove(bankingPosition)
+
+        // Check if bank data is available after moving to NPC
+        if (!bot.bank || bot.bank.gold <= 0) {
+            this.debug(bot, `Bank has no gold, cannot fund upgrade`)
+            // Return to scrolls NPC before exiting
+            await this.moveToUpgradeNpc(bot)
+            return false // Bank is empty or data not available
+        }
+
+        // Withdraw gold
+        if (bot.bank.gold >= goldMissing) {
+            await bot.withdrawGold(goldNeeded)
+            this.debug(bot, `Withdrew ${goldMissing}g from bank, now have ${bot.gold}g`)
+        } else {
+            // Take what's available
+            const availableGold = bot.bank.gold
+            this.debug(bot, `Bank only has ${availableGold}g, taking all of it`)
+            await bot.withdrawGold(bot.gold + availableGold)
+            this.debug(bot, `Withdrew ${availableGold}g from bank, now have ${bot.gold}g`)
+        }
+
+        // Verify gold actually changed
+        if (bot.gold === goldBefore) {
+            this.debug(bot, `WARNING: Gold did not change after withdraw attempt (still ${bot.gold}g)`)
+        }
+
+        // Return to scrolls NPC
+        await this.moveToUpgradeNpc(bot)
+
+        return bot.gold >= goldNeeded
+    }
+
+    /**
+     * Process all items for upgrade/compound - goes to scrolls, waits for completion, gets more from bank
+     */
+    protected async processUpgradeCycle(bot: Merchant): Promise<void> {
+        this.debug(bot, `processUpgradeCycle starting`)
+
+        let noProgressCount = 0
+        const maxNoProgressIterations = 20 // Break after 20 iterations with no progress (~10 seconds)
+        let lastInventoryState = ""
+        let lastGoldCheck = 0
+        let hasMovedToNpc = false
+
+        // Main upgrade cycle
+        while (true) {
+            // Wait for current upgrade/compound operations to complete
+            if (bot.q.upgrade || bot.q.compound) {
+                const waitTime = Math.max(bot.q.upgrade?.ms ?? 0, bot.q.compound?.ms ?? 0)
+                if (waitTime > 0) {
+                    this.debug(bot, `Waiting for upgrade/compound to finish: ${waitTime}ms`)
+                    await sleep(waitTime + 100)
+                    noProgressCount = 0 // Reset counter when operation is in progress
+                    continue
+                }
+            }
+
+            // Check if there are items in inventory that need upgrade/compound
+            // We rely on ItemStrategy to determine if items should be upgraded
+            let hasItemsInInventory = false
+            const itemsToUpgrade: string[] = []
+
+            for (const [, item] of bot.getItems()) {
+                // Check if item is upgradable or compoundable
+                const gItem = AL.Game.G.items[item.name]
+                const canUpgradeOrCompound = gItem?.upgrade || gItem?.compound
+
+                if (!canUpgradeOrCompound) {
+                    continue
+                }
+
+                // ItemStrategy will check wantToUpgrade and itemConfig
+                hasItemsInInventory = true
+                itemsToUpgrade.push(`${item.name}@${item.level}`)
+            }
+
+            this.debug(bot, `Inventory check: hasItems=${hasItemsInInventory}, items=[${itemsToUpgrade.join(", ")}]`)
+
+            if (!hasItemsInInventory) {
+                this.debug(bot, `No upgradable items in inventory, checking bank for more`)
+            }
+
+            if (hasItemsInInventory) {
+                // Move to NPC if we haven't already
+                if (!hasMovedToNpc) {
+                    await this.moveToUpgradeNpc(bot)
+                    hasMovedToNpc = true
+                }
+                
+                // Check if we have enough space for scrolls (need at least 2 free slots)
+                if (bot.esize < 2) {
+                    this.debug(bot, `Items ready but low on space (esize=${bot.esize}), depositing items to bank`)
+                    await bot.smartMove("bank")
+                    await this.depositItemsForUpgrade(bot)
+                    // Return to scrolls to continue
+                    await this.moveToUpgradeNpc(bot)
+                    hasMovedToNpc = true
+                    noProgressCount = 0
+                    lastInventoryState = itemsToUpgrade.join(",")
+                    continue
+                }
+
+                // Check if we have enough gold for scrolls
+                const goldNeeded = this.calculateGoldNeededForUpgrade(bot, itemsToUpgrade)
+
+                // If we don't have enough gold and gold amount hasn't changed, we're stuck
+                if (bot.gold < goldNeeded && bot.gold === lastGoldCheck) {
+                    this.debug(bot, `Gold unchanged at ${bot.gold}g, cannot afford upgrade (need ${goldNeeded}g), depositing items and breaking`)
+                    await bot.smartMove("bank")
+                    await this.depositItemsForUpgrade(bot)
+                    break
+                }
+
+                if (!await this.ensureGoldForUpgrade(bot, goldNeeded)) {
+                    this.debug(bot, `Cannot get enough gold for upgrade (need ${goldNeeded}g), depositing items and breaking cycle`)
+                    // Deposit items and break - let other cycles run to accumulate gold
+                    await bot.smartMove("bank")
+                    await this.depositItemsForUpgrade(bot)
+                    break
+                }
+
+                // Update last gold check after successful withdrawal
+                lastGoldCheck = bot.gold
+
+                // Check for progress by comparing inventory state
+                const currentInventoryState = itemsToUpgrade.join(",")
+
+                if (currentInventoryState === lastInventoryState) {
+                    noProgressCount++
+                    this.debug(bot, `No progress (iteration ${noProgressCount}/${maxNoProgressIterations}): [${itemsToUpgrade.join(", ")}]`)
+                } else {
+                    noProgressCount = 0
+                    this.debug(bot, `Progress detected: [${itemsToUpgrade.join(", ")}]`)
+                    lastInventoryState = currentInventoryState
+                }
+
+                if (noProgressCount >= maxNoProgressIterations) {
+                    this.debug(bot, `No progress after ${maxNoProgressIterations} iterations, breaking cycle - items may be stuck`)
+                    // Deposit items and break
+                    await bot.smartMove("bank")
+                    await this.depositItemsForUpgrade(bot)
+                    break
+                }
+
+                // ItemStrategy will process items (runs every 250ms)
+                await sleep(500)
+                continue
+            }
+
+            // No items in inventory - check bank for more using getItemsToCompoundOrUpgrade
+            this.debug(bot, "No items in inventory, checking bank for more items to upgrade/compound")
+            noProgressCount = 0 // Reset counter when we have new items to process
+            lastInventoryState = ""
+            hasMovedToNpc = false // Reset NPC flag
+
+            // Check if we have space
+            if (bot.esize <= 2) {
+                // Need to do banking to free up space
+                this.debug(bot, `Low on space (esize=${bot.esize}), doing banking first`)
+                await bot.smartMove("bank")
+                continue
+            }
+
+            // Go to bank and withdraw items using getItemsToCompoundOrUpgrade
+            this.debug(bot, "Moving to bank to withdraw items for upgrade/compound")
+            await bot.smartMove("bank")
+            const indexes = await getItemsToCompoundOrUpgrade(bot)
+
+            if (indexes.length === 0) {
+                this.debug(bot, "No more items to upgrade/compound in bank, cycle complete")
+                break
+            }
+
+            this.debug(bot, `Withdrew ${indexes.length} item(s) for upgrade/compound, esize=${bot.esize}`)
+
+            // After withdrawing, check if we have space for scrolls
+            if (bot.esize < 2) {
+                this.debug(bot, `No space for scrolls after withdrawal (esize=${bot.esize}), depositing items`)
+                await this.depositItemsForUpgrade(bot)
+            }
+
+            // Return to scrolls NPC (will be done at start of next iteration when we check hasItemsInInventory)
+        }
+    }
+
+    /**
+     * Deposit items that are ready for upgrade/compound to free up space for scrolls
+     */
+    protected async depositItemsForUpgrade(bot: Merchant): Promise<void> {
+        if (!bot.map.startsWith("bank")) {
+            await bot.smartMove("bank")
+        }
+
+        const itemCounts = await getItemCounts(bot.owner)
+        const itemsToDeposit: number[] = []
+
+        // Find items that are ready for upgrade/compound but we don't have space for scrolls
+        for (const [slot, item] of bot.getItems()) {
+            const itemConfig = this.options.itemConfig[item.name]
+            if (!wantToUpgrade(item, itemConfig, itemCounts)) continue
+
+            // Check if we have 3 of the same item for compound
+            const sameItems = bot.locateItems(item.name, bot.items, { level: item.level, locked: false })
+            if (sameItems.length >= 3) {
+                // Keep only 3 for compound, deposit the rest
+                for (let i = 3; i < sameItems.length; i++) {
+                    itemsToDeposit.push(sameItems[i])
+                }
+            } else if (item.upgrade) {
+                // For upgrade items, deposit if we have multiple and no space
+                const sameItems = bot.locateItems(item.name, bot.items, { locked: false })
+                if (sameItems.length > 1) {
+                    itemsToDeposit.push(slot)
+                }
+            }
+        }
+
+        if (itemsToDeposit.length > 0) {
+            this.debug(bot, `Depositing ${itemsToDeposit.length} items to free up space`)
+            for (const slot of itemsToDeposit) {
+                await bot.depositItem(slot)
+            }
+        }
+    }
+
     /**
      * The broom gives us a lot of speed, we should equip it
      * unless we're fishing, mining, or attacking
@@ -1575,7 +1962,27 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
 
         if (!wantToBank) return
 
-        if (!bot.map.startsWith("bank")) await bot.smartMove(bankingPosition)
+        if (!bot.map.startsWith("bank")) {
+            try {
+                console.log(`[doBanking] Moving to bank: from map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)} -> to map=${bankingPosition.map}, x=${bankingPosition.x}, y=${bankingPosition.y}`)
+                console.log(`[doBanking] Bot details: id=${bot.id}, name=${bot.name}, rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}, hp=${bot.hp}/${bot.max_hp}, mp=${bot.mp}/${bot.max_mp}`)
+                console.log(`[doBanking] Bot inventory: slots=${bot.slots}, esize=${bot.esize}, gold=${bot.gold}`)
+                console.log(`[doBanking] Banking target: map=${bankingPosition.map}, x=${bankingPosition.x}, y=${bankingPosition.y}, type=${typeof bankingPosition === 'object' ? 'object' : 'string'}`)
+                await bot.smartMove(bankingPosition)
+            } catch (e) {
+                console.error(`[doBanking] Failed to move to bank: ${e}`)
+                console.error(`[doBanking] Stack trace: ${e.stack}`)
+                console.error(`[doBanking] Destination: map=${bankingPosition.map}, x=${bankingPosition.x}, y=${bankingPosition.y}`)
+                console.error(`[doBanking] Current position: map=${bot.map}, x=${bot.x}, y=${bot.y}`)
+                console.error(`[doBanking] Bot status: rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}, hp=${bot.hp}/${bot.max_hp}, mp=${bot.mp}/${bot.max_mp}`)
+                console.error(`[doBanking] Bot inventory: slots=${bot.slots}, esize=${bot.esize}, gold=${bot.gold}`)
+                console.error(`[doBanking] Bot target: ${bot.target}`)
+                // Set a cooldown before trying again
+                const failKey = `${bot.id}_banking_fail`
+                if (checkOnlyEveryMS(failKey, 30_000, false)) return
+                return
+            }
+        }
 
         const itemCounts = await getItemCounts(bot.owner)
 
@@ -1595,6 +2002,7 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
 
             if (wantToHold(this.options.itemConfig, item, bot)) continue
             if (wantToSellToNpc(this.options.itemConfig, item, bot, itemCounts)) continue
+            if (wantToUpgrade(item, this.options.itemConfig[item.name], itemCounts)) continue // Don't deposit items we want to upgrade or compound
 
             if (item.q) {
                 // It's stackable
@@ -1818,19 +2226,27 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
 
         // Look for items to upgrade
         if (bot.esize >= 2) {
+            this.debug(bot, `Looking for items to compound or upgrade... (esize=${bot.esize})`)
             const itemCounts = await getItemCounts(bot.owner)
 
+            let foundUpgradable = false
             bankSearch: for (const [packName, packItems] of bot.getBankItems()) {
                 for (const [packSlot, packItem] of packItems) {
                     if (!packItem.upgrade) continue // Not upgradable
 
                     const itemConfig: UpgradeConfig = this.options.itemConfig[packItem.name]
-                    if (!wantToUpgrade(packItem, itemConfig, itemCounts)) continue
+                    const wantUpgrade = wantToUpgrade(packItem, itemConfig, itemCounts)
+                    if (!wantUpgrade) continue
 
                     // Withdraw the item, we'll upgrade it
+                    this.debug(bot, `WITHDRAW [${packName}:${packSlot} ${packItem.name}@${packItem.level}] for upgrade`)
                     await goAndWithdrawItem(bot, packName, packSlot, -1)
+                    foundUpgradable = true
                     if (bot.esize < 2) break bankSearch // Not enough empty slots
                 }
+            }
+            if (!foundUpgradable) {
+                this.debug(bot, `No items found to upgrade in bank`)
             }
         }
 
