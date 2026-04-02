@@ -55,6 +55,7 @@ import {
     DEFAULT_ITEM_CONFIG,
     ItemConfig,
     UpgradeConfig,
+    getBotInventoryCounts,
     getItemCounts,
     reduceCount,
     wantToDestroy,
@@ -1772,7 +1773,8 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
             }
 
             // Check if there are items in inventory that need upgrade/compound
-            const itemCounts = await getItemCounts(bot.owner)
+            // Use getBotInventoryCounts to only count items in THIS bot's inventory
+            const itemCounts = getBotInventoryCounts(bot)
             let hasItemsInInventory = false
             const itemsToUpgrade: string[] = []
 
