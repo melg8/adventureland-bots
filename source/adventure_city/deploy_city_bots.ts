@@ -113,7 +113,6 @@ const REPLENISHABLES = new Map<ItemName, number>([
 
 const SERVER_REGION: ServerRegion = DEFAULT_REGION
 const SERVER_IDENTIFIER: ServerIdentifier = DEFAULT_IDENTIFIER
-const MAX_CHARS = 9
 
 // ============================================================================
 // ACCOUNT CONFIGURATION LOADING
@@ -471,7 +470,6 @@ const startCharacter = async (
         }
     }
 
-    if (CONTEXTS.length >= MAX_CHARS) throw `Too many characters are already running (We only support ${MAX_CHARS} characters)`
     for (const context of CONTEXTS) {
         if (context.bot.name == name) throw `Character '${name}' is already running!`
     }
