@@ -466,9 +466,8 @@ export class MerchantStrategy implements Strategy<Merchant> {
             }
 
             if (this.options.enableBuyReplenishables) {
-                // Find own characters with low replenishables and go deliver some
+                // Find characters with low replenishables and go deliver some
                 for (const friendContext of filterContexts(this.contexts, {
-                    owner: bot.owner,
                     serverData: bot.serverData,
                 })) {
                     const friend = friendContext.bot
@@ -521,10 +520,9 @@ export class MerchantStrategy implements Strategy<Merchant> {
                 }
             }
 
-            // Find own characters with low inventory space and go grab some items off of them
+            // Find characters with low inventory space and go grab some items off of them
             if (this.options.enableOffload) {
                 for (const friendContext of filterContexts(this.contexts, {
-                    owner: bot.owner,
                     serverData: bot.serverData,
                 })) {
                     const friend = friendContext.bot
@@ -949,7 +947,6 @@ export class MerchantStrategy implements Strategy<Merchant> {
                 let lowestItemLevel: number = Number.MAX_SAFE_INTEGER
                 let getFor: Character
                 itemSearch: for (const friendContext of filterContexts(this.contexts, {
-                    owner: bot.owner,
                     serverData: bot.serverData,
                 })) {
                     const friend = friendContext.bot
@@ -1366,7 +1363,6 @@ export class MerchantStrategy implements Strategy<Merchant> {
                             // We didn't find one in the bank, see if any of our characters have one
                             for (const context of filterContexts(this.contexts, {
                                 serverData: bot.serverData,
-                                owner: bot.owner,
                             })) {
                                 const friend = context.bot
                                 if (friend == bot) continue // Skip ourself
@@ -2465,7 +2461,6 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                 if (!bot.hasItem(item)) {
                     // We didn't find a key in the bank, check our characters
                     for (const friendContext of filterContexts(this.options.contexts, {
-                        owner: bot.owner,
                         serverData: bot.serverData,
                     })) {
                         const friendBot = friendContext.bot
@@ -2534,7 +2529,6 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
 
     protected async goDeliverReplenishables(bot: Merchant): Promise<void> {
         for (const friendContext of filterContexts(this.options.contexts, {
-            owner: bot.owner,
             serverData: bot.serverData,
         })) {
             const friendBot = friendContext.bot
@@ -2578,7 +2572,6 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
 
         const itemCounts = await getItemCounts(bot.owner)
         for (const friendContext of filterContexts(this.options.contexts, {
-            owner: bot.owner,
             serverData: bot.serverData,
         })) {
             const friend = friendContext.bot
@@ -2762,7 +2755,6 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                     if (!spiderSilk.length) {
                         // We didn't find spidersilk in the bank, check our characters
                         for (const friendContext of filterContexts(this.options.contexts, {
-                            owner: bot.owner,
                             serverData: bot.serverData,
                         })) {
                             const friendBot = friendContext.bot
@@ -2844,7 +2836,6 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
         if (bot.esize <= 1) return // Still low on space after banking
 
         for (const friendContext of filterContexts(this.options.contexts, {
-            owner: bot.owner,
             serverData: bot.serverData,
         })) {
             const friendBot = friendContext.bot
@@ -2910,7 +2901,6 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                     if (!spiderSilk.length) {
                         // We didn't find spidersilk in the bank, check our characters
                         for (const friendContext of filterContexts(this.options.contexts, {
-                            owner: bot.owner,
                             serverData: bot.serverData,
                         })) {
                             const friendBot = friendContext.bot
