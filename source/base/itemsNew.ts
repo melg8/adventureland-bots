@@ -1303,19 +1303,15 @@ export function wantToUpgrade(item: Item, itemConfig: CombinedConfig, itemCounts
 
     // Log all level counts for this item
     const levelCountsStr = Array.from(levelCounts.entries()).map(([lvl, cnt]) => `${lvl}: ${cnt.q}`).join(", ")
-    console.log(`[wantToUpgrade] ${item.name}@${item.level} | compound=${!!item.compound} | upgrade=${!!item.upgrade} | levelCounts=[${levelCountsStr}]`)
 
     // For compound items: ONLY check if we have 3+ items at the SAME level
     // Compound requires exactly 3 items of the same level - no other logic applies
     if (item.compound) {
         const currentLevelCount = levelCounts.get(item.level)
         const countAtThisLevel = currentLevelCount?.q ?? 0
-        console.log(`[wantToUpgrade] ${item.name}@${item.level} | COMPOUND CHECK | countAtLevel${item.level}=${countAtThisLevel} | need>=3`)
         if (currentLevelCount && currentLevelCount.q >= 3) {
-            console.log(`[wantToUpgrade] ${item.name}@${item.level} | RESULT: true (enough for compound)`)
             return true
         }
-        console.log(`[wantToUpgrade] ${item.name}@${item.level} | RESULT: false (not enough for compound)`)
         return false
     }
 
@@ -1351,13 +1347,10 @@ export function wantToUpgrade(item: Item, itemConfig: CombinedConfig, itemCounts
         }
     }
     let numToKeep = classMultiplier * numEquippableMultiplier
-    console.log(`[wantToUpgrade] ${item.name}@${item.level} | UPGRADE CHECK | numItem=${numItem} | classMultiplier=${classMultiplier} | numEquippableMultiplier=${numEquippableMultiplier} | numToKeep=${numToKeep}`)
     if (numItem <= numToKeep) {
-        console.log(`[wantToUpgrade] ${item.name}@${item.level} | RESULT: false (numItem <= numToKeep)`)
         return false // We don't want to lose this item
     }
 
-    console.log(`[wantToUpgrade] ${item.name}@${item.level} | RESULT: true (have extras)`)
     return true
 }
 
