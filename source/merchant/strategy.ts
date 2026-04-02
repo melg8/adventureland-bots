@@ -1557,6 +1557,8 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                     await this.doBanking(bot) // NOTE: Don't catch, we don't want to continue if banking fails
                     // Banking succeeded, check for items to upgrade
                     await this.processUpgradeCycle(bot).catch(console.error)
+                    // After upgrade cycle, deposit upgraded items to free space
+                    await this.doBanking(bot).catch(console.error)
                 } catch (e) {
                     console.error(`[MoveLoop] doBanking failed: ${e}`)
                     console.error(`[MoveLoop] Stack trace: ${e.stack}`)
@@ -2834,7 +2836,12 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
     }
 
     protected async goGetItemsFromContexts(bot: Merchant): Promise<void> {
-        if (bot.esize <= 1) return // We are low on space
+        if (bot.esize <= 5) {
+            // Low on space - do banking first before collecting
+            this.debug(bot, `Low on space (esize=${bot.esize}) before collecting items, doing banking`)
+            await this.doBanking(bot)
+        }
+        if (bot.esize <= 1) return // Still low on space after banking
 
         for (const friendContext of filterContexts(this.options.contexts, {
             owner: bot.owner,
@@ -2870,7 +2877,11 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
             for (const [slot, item] of friendBot.getItems()) {
                 if (wantToHold(this.options.itemConfig, item, friendBot)) continue
                 await friendBot.sendItem(bot.id, slot, item.q ?? 1)
-                if (bot.esize <= 1) return this.doBanking(bot) // Go do banking if we're full now
+                if (bot.esize <= 5) {
+                    // Getting low on space - do banking
+                    await this.doBanking(bot)
+                    if (bot.esize <= 1) return
+                }
             }
         }
     }
