@@ -1772,7 +1772,7 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
             }
 
             // Check if there are items in inventory that need upgrade/compound
-            // We rely on ItemStrategy to determine if items should be upgraded
+            const itemCounts = await getItemCounts(bot.owner)
             let hasItemsInInventory = false
             const itemsToUpgrade: string[] = []
 
@@ -1785,7 +1785,15 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                     continue
                 }
 
-                // ItemStrategy will check wantToUpgrade and itemConfig
+                // Also check wantToUpgrade to filter out items we don't want to upgrade
+                const itemConfig = this.options.itemConfig[item.name]
+                const wantUpgrade = wantToUpgrade(item, itemConfig, itemCounts)
+                
+                if (!wantUpgrade) {
+                    continue
+                }
+
+                // ItemStrategy will process this item
                 hasItemsInInventory = true
                 itemsToUpgrade.push(`${item.name}@${item.level}`)
             }
@@ -1799,6 +1807,7 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
             if (hasItemsInInventory) {
                 // Move to NPC if we haven't already
                 if (!hasMovedToNpc) {
+                    this.debug(bot, `Moving to upgrade NPC - hasItems=${hasItemsInInventory}, items=[${itemsToUpgrade.join(", ")}]`)
                     await this.moveToUpgradeNpc(bot)
                     hasMovedToNpc = true
                 }
@@ -1869,6 +1878,14 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
             lastInventoryState = ""
             hasMovedToNpc = false // Reset NPC flag
 
+            // Count upgradable items before withdrawing
+            let upgradableBefore = 0
+            for (const [, item] of bot.getItems()) {
+                const gItem = AL.Game.G.items[item.name]
+                if (gItem?.upgrade || gItem?.compound) upgradableBefore++
+            }
+            this.debug(bot, `Before bank: ${upgradableBefore} upgradable items in inventory, esize=${bot.esize}`)
+
             // Check if we have space
             if (bot.esize <= 2) {
                 // Need to do banking to free up space
@@ -1882,12 +1899,24 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
             await bot.smartMove("bank")
             const indexes = await getItemsToCompoundOrUpgrade(bot)
 
-            if (indexes.length === 0) {
-                this.debug(bot, "No more items to upgrade/compound in bank, cycle complete")
+            // Count upgradable items after withdrawing
+            let upgradableAfter = 0
+            const newItems: string[] = []
+            for (const [, item] of bot.getItems()) {
+                const gItem = AL.Game.G.items[item.name]
+                if (gItem?.upgrade || gItem?.compound) {
+                    upgradableAfter++
+                    newItems.push(`${item.name}@${item.level}`)
+                }
+            }
+            this.debug(bot, `After bank: ${upgradableAfter} upgradable items in inventory [${newItems.join(", ")}], esize=${bot.esize}, indexes returned=${indexes.length}`)
+
+            if (indexes.length === 0 || upgradableAfter === upgradableBefore) {
+                this.debug(bot, "No new items to upgrade/compound withdrawn from bank, cycle complete")
                 break
             }
 
-            this.debug(bot, `Withdrew ${indexes.length} item(s) for upgrade/compound, esize=${bot.esize}`)
+            this.debug(bot, `Successfully withdrew ${upgradableAfter - upgradableBefore} new item(s) for upgrade/compound`)
 
             // After withdrawing, check if we have space for scrolls
             if (bot.esize < 2) {
@@ -1895,7 +1924,7 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                 await this.depositItemsForUpgrade(bot)
             }
 
-            // Return to scrolls NPC (will be done at start of next iteration when we check hasItemsInInventory)
+            // Continue to next iteration - will move to NPC if hasItemsInInventory is true
         }
     }
 

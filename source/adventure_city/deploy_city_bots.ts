@@ -73,12 +73,24 @@ const ACCOUNTS_FOLDER = "accounts"
  */
 const CRABRAVE_ITEM_CONFIG: ItemConfig = {
     "cclaw": {...SELL_TO_NPC,},
-    "ringsj": {...SELL_TO_NPC,},
     "hpamulet": { ...SELL_TO_NPC, },
     "hpbelt": {...SELL_TO_NPC,},
-    "wcap": {...SELL_TO_NPC,},
-    "wshoes": {...SELL_TO_NPC,},
     "stinger": {...SELL_TO_NPC,},
+    "wcap": {        
+        buy: true,
+        buyPrice: "ponty",
+        upgradeUntilLevel: 8,
+    },
+    "wshoes": {
+        buy: true,
+        buyPrice: "ponty",
+        upgradeUntilLevel: 8,
+    },
+    "ringsj": {         
+        buy: true,
+        buyPrice: "ponty",
+        upgradeUntilLevel: 4,
+    },
     "sshield": {
         buy: true,
         buyPrice: "ponty",
@@ -350,6 +362,9 @@ async function startWarrior(context: Strategist<Warrior>) {
 async function startMerchant(context: Strategist<Merchant>) {
     // Merchants don't use startShared - they have their own strategy
     CONTEXTS.push(context)
+
+    // Apply sell strategy to merchant so it can sell NPC-marked items from inventory
+    context.applyStrategy(sellStrategy)
 
     const merchantFriends = CONTEXTS.filter(c => c.bot.ctype !== "merchant")
 

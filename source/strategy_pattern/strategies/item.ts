@@ -377,7 +377,10 @@ export class ItemStrategy<Type extends PingCompensatedCharacter> implements Stra
             }
 
             const offeringSlot = offering ? bot.locateItem(offering) : undefined
-            if (!bot.canUpgrade(slot, scrollSlot, offeringSlot)) return // Can't compound from where we are
+            if (!bot.canUpgrade(slot, scrollSlot, offeringSlot)) {
+                // Can't upgrade from current position, try next item
+                continue
+            }
 
             if (bot.canUse("massproduction")) await (bot as unknown as Merchant).massProduction()
 
