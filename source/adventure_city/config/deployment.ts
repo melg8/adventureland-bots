@@ -45,8 +45,8 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "party_test1_goo",
-                name: "Test1 Goo Farm",
+                id: "party_test1",
+                name: "Test1 Party",
                 members: [
                     "test_1_1", "test_1_2", "test_1_3",
                     "test_2_1", "test_2_2", "test_2_3",
@@ -60,8 +60,8 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "party_test4_goo",
-                name: "Test4 Goo Farm",
+                id: "party_test4",
+                name: "Test4 Party",
                 members: [
                     "test_4_1", "test_4_2", "test_4_3",
                     "test_5_1", "test_5_2", "test_5_3",
@@ -75,8 +75,8 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "party_test7_goo",
-                name: "Test7 Goo Farm",
+                id: "party_test7",
+                name: "Test7 Party",
                 members: [
                     "test_7_1", "test_7_2", "test_7_3",
                     "test_8_1", "test_8_2", "test_8_3",
@@ -90,8 +90,8 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "party_test10_goo",
-                name: "Test10 Goo Farm",
+                id: "party_test10",
+                name: "Test10 Party",
                 members: [
                     "test_10_1", "test_10_2", "test_10_3",
                     "test_11_1", "test_11_2", "test_11_3",
@@ -105,8 +105,8 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "party_test13_goo",
-                name: "Test13 Goo Farm",
+                id: "party_test13",
+                name: "Test13 Party",
                 members: [
                     "test_13_1", "test_13_2", "test_13_3",
                     "test_14_1", "test_14_2", "test_14_3",
@@ -120,8 +120,8 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "party_test16_goo",
-                name: "Test16 Goo Farm",
+                id: "party_test16",
+                name: "Test16 Party",
                 members: [
                     "test_16_1", "test_16_2", "test_16_3",
                     "test_17_1", "test_17_2", "test_17_3",
@@ -148,9 +148,9 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "hunt_test1_crab",
-                name: "Test1 Crab Farm",
-                monster: "crab" as MonsterName,
+                id: "hunt_test1",
+                name: "Test1 Hunt",
+                monster: "tortoise" as MonsterName,
                 hunters: [
                     "test_1_1", "test_1_2", "test_1_3",
                     "test_2_1", "test_2_2", "test_2_3",
@@ -159,9 +159,9 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "hunt_test4_crab",
-                name: "Test4 Crab Farm",
-                monster: "crab" as MonsterName,
+                id: "hunt_test4",
+                name: "Test4 Hunt",
+                monster: "tortoise" as MonsterName,
                 hunters: [
                     "test_4_1", "test_4_2", "test_4_3",
                     "test_5_1", "test_5_2", "test_5_3",
@@ -170,9 +170,9 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "hunt_test7_crab",
-                name: "Test7 Crab Farm",
-                monster: "crab" as MonsterName,
+                id: "hunt_test7",
+                name: "Test7 Hunt",
+                monster: "tortoise" as MonsterName,
                 hunters: [
                     "test_7_1", "test_7_2", "test_7_3",
                     "test_8_1", "test_8_2", "test_8_3",
@@ -181,9 +181,9 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "hunt_test10_crab",
-                name: "Test10 Crab Farm",
-                monster: "crab" as MonsterName,
+                id: "hunt_test10",
+                name: "Test10 Hunt",
+                monster: "tortoise" as MonsterName,
                 hunters: [
                     "test_10_1", "test_10_2", "test_10_3",
                     "test_11_1", "test_11_2", "test_11_3",
@@ -192,9 +192,9 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "hunt_test13_crab",
-                name: "Test13 Crab Farm",
-                monster: "crab" as MonsterName,
+                id: "hunt_test13",
+                name: "Test13 Hunt",
+                monster: "tortoise" as MonsterName,
                 hunters: [
                     "test_13_1", "test_13_2", "test_13_3",
                     "test_14_1", "test_14_2", "test_14_3",
@@ -203,9 +203,9 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "hunt_test16_crab",
-                name: "Test16 Crab Farm",
-                monster: "crab" as MonsterName,
+                id: "hunt_test16",
+                name: "Test16 Hunt",
+                monster: "tortoise" as MonsterName,
                 hunters: [
                     "test_16_1", "test_16_2", "test_16_3",
                     "test_17_1", "test_17_2", "test_17_3",
@@ -218,7 +218,7 @@ export function createDefaultDeployment(): DeploymentConfig {
             {
                 id: "merchant_hold2",
                 characterName: "Hold2",
-                servedParties: ["party_all", "party_test1_goo", "party_test4_goo", "party_test7_goo", "party_test10_goo", "party_test13_goo", "party_test16_goo"],
+                servedParties: ["party_all", "party_test1", "party_test4", "party_test7", "party_test10", "party_test13", "party_test16"],
                 position: { map: "main", x: 0, y: 0 },
                 enabled: true,
             },
