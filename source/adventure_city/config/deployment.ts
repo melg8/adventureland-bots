@@ -134,6 +134,36 @@ export function createDefaultDeployment(): DeploymentConfig {
                 },
                 enabled: true,
             },
+            {
+                id: "party_test19",
+                name: "Test19 Party",
+                members: [
+                    "test_19_1", "test_19_2", "test_19_3",
+                    "test_20_1", "test_20_2", "test_20_3",
+                    "test_21_1", "test_21_2", "test_21_3",
+                ],
+                leader: "test_19_1",
+                server: {
+                    region: DEFAULT_REGION,
+                    identifier: DEFAULT_IDENTIFIER,
+                },
+                enabled: true,
+            },
+            {
+                id: "party_test22",
+                name: "Test22 Party",
+                members: [
+                    "test_22_1", "test_22_2", "test_22_3",
+                    "test_23_1", "test_23_2", "test_23_3",
+                    "test_24_1", "test_24_2", "test_24_3",
+                ],
+                leader: "test_22_1",
+                server: {
+                    region: DEFAULT_REGION,
+                    identifier: DEFAULT_IDENTIFIER,
+                },
+                enabled: true,
+            },
         ],
         hunts: [
             {
@@ -150,7 +180,7 @@ export function createDefaultDeployment(): DeploymentConfig {
             {
                 id: "hunt_all_tests",
                 name: "All Tests Hunt",
-                monster: "tortoise" as MonsterName,
+                monster: "greenfairy" as MonsterName,
                 hunters: [
                     "test_1_1", "test_1_2", "test_1_3",
                     "test_2_1", "test_2_2", "test_2_3",
@@ -170,6 +200,12 @@ export function createDefaultDeployment(): DeploymentConfig {
                     "test_16_1", "test_16_2", "test_16_3",
                     "test_17_1", "test_17_2", "test_17_3",
                     "test_18_1", "test_18_2", "test_18_3",
+                    "test_19_1", "test_19_2", "test_19_3",
+                    "test_20_1", "test_20_2", "test_20_3",
+                    "test_21_1", "test_21_2", "test_21_3",
+                    "test_22_1", "test_22_2", "test_22_3",
+                    "test_23_1", "test_23_2", "test_23_3",
+                    "test_24_1", "test_24_2", "test_24_3",
                 ],
                 enabled: true,
             },
@@ -178,7 +214,7 @@ export function createDefaultDeployment(): DeploymentConfig {
             {
                 id: "merchant_hold2",
                 characterName: "Hold2",
-                servedParties: ["party_test1", "party_test4", "party_test7", "party_test10", "party_test13", "party_test16"],
+                servedParties: ["party_test1", "party_test4", "party_test7", "party_test10", "party_test13", "party_test16", "party_test19", "party_test22"],
                 position: { map: "main", x: 0, y: 0 },
                 enabled: true,
             },
