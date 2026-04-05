@@ -164,6 +164,36 @@ export function createDefaultDeployment(): DeploymentConfig {
                 },
                 enabled: true,
             },
+            {
+                id: "party_test25",
+                name: "Test25 Party",
+                members: [
+                    "test_25_1", "test_25_2", "test_25_3",
+                    "test_26_1", "test_26_2", "test_26_3",
+                    "test_27_1", "test_27_2", "test_27_3",
+                ],
+                leader: "test_25_1",
+                server: {
+                    region: DEFAULT_REGION,
+                    identifier: DEFAULT_IDENTIFIER,
+                },
+                enabled: true,
+            },
+            {
+                id: "party_test28",
+                name: "Test28 Party",
+                members: [
+                    // "test_28_1", "test_28_2", "test_28_3",
+                    // "test_29_1", "test_29_2", "test_29_3",
+                    // "test_30_1", "test_30_2", "test_30_3",
+                ],
+                leader: "test_28_1",
+                server: {
+                    region: DEFAULT_REGION,
+                    identifier: DEFAULT_IDENTIFIER,
+                },
+                enabled: true,
+            },
         ],
         hunts: [
             {
@@ -206,6 +236,12 @@ export function createDefaultDeployment(): DeploymentConfig {
                     "test_22_1", "test_22_2", "test_22_3",
                     "test_23_1", "test_23_2", "test_23_3",
                     "test_24_1", "test_24_2", "test_24_3",
+                    "test_25_1", "test_25_2", "test_25_3",
+                    "test_26_1", "test_26_2", "test_26_3",
+                    "test_27_1", "test_27_2", "test_27_3",
+                    // "test_28_1", "test_28_2", "test_28_3",
+                    // "test_29_1", "test_29_2", "test_29_3",
+                    // "test_30_1", "test_30_2", "test_30_3",
                 ],
                 enabled: true,
             },
@@ -214,7 +250,7 @@ export function createDefaultDeployment(): DeploymentConfig {
             {
                 id: "merchant_hold2",
                 characterName: "Hold2",
-                servedParties: ["party_test1", "party_test4", "party_test7", "party_test10", "party_test13", "party_test16", "party_test19", "party_test22"],
+                servedParties: ["party_test1", "party_test4", "party_test7", "party_test10", "party_test13", "party_test16", "party_test19", "party_test22", "party_test25", "party_test28"],
                 position: { map: "main", x: 0, y: 0 },
                 enabled: true,
             },
