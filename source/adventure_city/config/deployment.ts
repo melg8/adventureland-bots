@@ -148,65 +148,25 @@ export function createDefaultDeployment(): DeploymentConfig {
                 enabled: true,
             },
             {
-                id: "hunt_test1",
-                name: "Test1 Hunt",
+                id: "hunt_all_tests",
+                name: "All Tests Hunt",
                 monster: "tortoise" as MonsterName,
                 hunters: [
                     "test_1_1", "test_1_2", "test_1_3",
                     "test_2_1", "test_2_2", "test_2_3",
                     "test_3_1", "test_3_2", "test_3_3",
-                ],
-                enabled: true,
-            },
-            {
-                id: "hunt_test4",
-                name: "Test4 Hunt",
-                monster: "tortoise" as MonsterName,
-                hunters: [
                     "test_4_1", "test_4_2", "test_4_3",
                     "test_5_1", "test_5_2", "test_5_3",
                     "test_6_1", "test_6_2", "test_6_3",
-                ],
-                enabled: true,
-            },
-            {
-                id: "hunt_test7",
-                name: "Test7 Hunt",
-                monster: "tortoise" as MonsterName,
-                hunters: [
                     "test_7_1", "test_7_2", "test_7_3",
                     "test_8_1", "test_8_2", "test_8_3",
                     "test_9_1", "test_9_2", "test_9_3",
-                ],
-                enabled: true,
-            },
-            {
-                id: "hunt_test10",
-                name: "Test10 Hunt",
-                monster: "tortoise" as MonsterName,
-                hunters: [
                     "test_10_1", "test_10_2", "test_10_3",
                     "test_11_1", "test_11_2", "test_11_3",
                     "test_12_1", "test_12_2", "test_12_3",
-                ],
-                enabled: true,
-            },
-            {
-                id: "hunt_test13",
-                name: "Test13 Hunt",
-                monster: "tortoise" as MonsterName,
-                hunters: [
                     "test_13_1", "test_13_2", "test_13_3",
                     "test_14_1", "test_14_2", "test_14_3",
                     "test_15_1", "test_15_2", "test_15_3",
-                ],
-                enabled: true,
-            },
-            {
-                id: "hunt_test16",
-                name: "Test16 Hunt",
-                monster: "tortoise" as MonsterName,
-                hunters: [
                     "test_16_1", "test_16_2", "test_16_3",
                     "test_17_1", "test_17_2", "test_17_3",
                     "test_18_1", "test_18_2", "test_18_3",
@@ -218,7 +178,7 @@ export function createDefaultDeployment(): DeploymentConfig {
             {
                 id: "merchant_hold2",
                 characterName: "Hold2",
-                servedParties: ["party_all", "party_test1", "party_test4", "party_test7", "party_test10", "party_test13", "party_test16"],
+                servedParties: ["party_test1", "party_test4", "party_test7", "party_test10", "party_test13", "party_test16"],
                 position: { map: "main", x: 0, y: 0 },
                 enabled: true,
             },

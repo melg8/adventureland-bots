@@ -999,10 +999,11 @@ export class BaseAttackStrategy<Type extends Character> implements Strategy<Type
     protected async defensiveAttack(bot: Type) {
         if (!bot.canUse("attack")) return // We can't attack
 
+        // Attack any monster within range (not just party member targets)
+        // This allows cross-party help when bots are in the same hunt
         const entity = bot.getEntity({
             ...this.options,
             canDamage: "attack",
-            targetingPartyMember: true,
             withinRange: "attack",
             returnLowestHP: true,
         })

@@ -65,6 +65,7 @@ function createAttackStrategies(
     strategies.set("mage", new MageAttackStrategy({
         contexts: huntContexts,
         type: monster,
+        disableCreditCheck: true,
         enableTargetDistribution: true,
         enableTimeDistribution: true,
     }))
@@ -72,6 +73,7 @@ function createAttackStrategies(
     strategies.set("paladin", new PaladinAttackStrategy({
         contexts: huntContexts,
         type: monster,
+        disableCreditCheck: true,
         enableTargetDistribution: true,
         enableTimeDistribution: true,
     }))
@@ -79,6 +81,7 @@ function createAttackStrategies(
     strategies.set("priest", new PriestAttackStrategy({
         contexts: huntContexts,
         disableCurse: true,
+        disableCreditCheck: true,
         type: monster,
         enableTargetDistribution: true,
         enableTimeDistribution: true,
@@ -87,6 +90,7 @@ function createAttackStrategies(
     strategies.set("ranger", new RangerAttackStrategy({
         contexts: huntContexts,
         disableHuntersMark: true,
+        disableCreditCheck: true,
         type: monster,
         enableTargetDistribution: true,
         enableTimeDistribution: true,
@@ -95,6 +99,7 @@ function createAttackStrategies(
     strategies.set("rogue", new RogueAttackStrategy({
         contexts: huntContexts,
         type: monster,
+        disableCreditCheck: true,
         enableTargetDistribution: true,
         enableTimeDistribution: true,
     }))
@@ -102,6 +107,7 @@ function createAttackStrategies(
     strategies.set("warrior", new WarriorAttackStrategy({
         contexts: huntContexts,
         disableAgitate: true,
+        disableCreditCheck: true,
         type: monster,
         enableTargetDistribution: true,
         enableTimeDistribution: true,
