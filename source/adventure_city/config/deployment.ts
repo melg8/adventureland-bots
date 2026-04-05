@@ -89,6 +89,51 @@ export function createDefaultDeployment(): DeploymentConfig {
                 },
                 enabled: true,
             },
+            {
+                id: "party_test10_goo",
+                name: "Test10 Goo Farm",
+                members: [
+                    "test_10_1", "test_10_2", "test_10_3",
+                    "test_11_1", "test_11_2", "test_11_3",
+                    "test_12_1", "test_12_2", "test_12_3",
+                ],
+                leader: "test_10_1",
+                server: {
+                    region: DEFAULT_REGION,
+                    identifier: DEFAULT_IDENTIFIER,
+                },
+                enabled: true,
+            },
+            {
+                id: "party_test13_goo",
+                name: "Test13 Goo Farm",
+                members: [
+                    "test_13_1", "test_13_2", "test_13_3",
+                    "test_14_1", "test_14_2", "test_14_3",
+                    "test_15_1", "test_15_2", "test_15_3",
+                ],
+                leader: "test_13_1",
+                server: {
+                    region: DEFAULT_REGION,
+                    identifier: DEFAULT_IDENTIFIER,
+                },
+                enabled: true,
+            },
+            {
+                id: "party_test16_goo",
+                name: "Test16 Goo Farm",
+                members: [
+                    "test_16_1", "test_16_2", "test_16_3",
+                    "test_17_1", "test_17_2", "test_17_3",
+                    "test_18_1", "test_18_2", "test_18_3",
+                ],
+                leader: "test_16_1",
+                server: {
+                    region: DEFAULT_REGION,
+                    identifier: DEFAULT_IDENTIFIER,
+                },
+                enabled: true,
+            },
         ],
         hunts: [
             {
@@ -135,12 +180,45 @@ export function createDefaultDeployment(): DeploymentConfig {
                 ],
                 enabled: true,
             },
+            {
+                id: "hunt_test10_crab",
+                name: "Test10 Crab Farm",
+                monster: "crab" as MonsterName,
+                hunters: [
+                    "test_10_1", "test_10_2", "test_10_3",
+                    "test_11_1", "test_11_2", "test_11_3",
+                    "test_12_1", "test_12_2", "test_12_3",
+                ],
+                enabled: true,
+            },
+            {
+                id: "hunt_test13_crab",
+                name: "Test13 Crab Farm",
+                monster: "crab" as MonsterName,
+                hunters: [
+                    "test_13_1", "test_13_2", "test_13_3",
+                    "test_14_1", "test_14_2", "test_14_3",
+                    "test_15_1", "test_15_2", "test_15_3",
+                ],
+                enabled: true,
+            },
+            {
+                id: "hunt_test16_crab",
+                name: "Test16 Crab Farm",
+                monster: "crab" as MonsterName,
+                hunters: [
+                    "test_16_1", "test_16_2", "test_16_3",
+                    "test_17_1", "test_17_2", "test_17_3",
+                    "test_18_1", "test_18_2", "test_18_3",
+                ],
+                enabled: true,
+            },
         ],
         merchants: [
             {
                 id: "merchant_hold2",
                 characterName: "Hold2",
-                servedParties: ["party_all", "party_test1_goo", "party_test4_goo", "party_test7_goo"],
+                servedParties: ["party_all", "party_test1_goo", "party_test4_goo", "party_test7_goo", "party_test10_goo", "party_test13_goo", "party_test16_goo"],
                 position: { map: "main", x: 0, y: 0 },
                 enabled: true,
             },
