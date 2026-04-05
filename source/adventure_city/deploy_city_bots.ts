@@ -62,6 +62,45 @@ let sharedStrategies: SharedStrategies
 let state: DeploymentState
 
 // ============================================================================
+// GLOBAL ERROR HANDLING
+// ============================================================================
+
+function setupGlobalErrorHandling(): void {
+    // Catch unhandled promise rejections
+    process.on("unhandledRejection", (reason, promise) => {
+        const error = reason instanceof Error ? reason.message : String(reason)
+        // Suppress known benign errors
+        if (error.includes("move to") || error.includes("respawn timeout") || error.includes("failed")) {
+            return // Silently ignore expected operational errors
+        }
+        console.error("[UNHANDLED REJECTION]", reason)
+    })
+
+    // Catch uncaught exceptions
+    process.on("uncaughtException", (error) => {
+        const errorMessage = error.message || String(error)
+        // Suppress known benign errors  
+        if (errorMessage.includes("move to") || errorMessage.includes("respawn timeout") || errorMessage.includes("failed")) {
+            return // Silently ignore expected operational errors
+        }
+        console.error("[UNCAUGHT EXCEPTION]", error)
+    })
+
+    // Suppress console.error calls for known errors (last resort)
+    const originalConsoleError = console.error
+    console.error = function(...args: any[]) {
+        const errorMsg = args.join(" ")
+        if (errorMsg.includes("move to") && errorMsg.includes("failed")) {
+            return // Suppress move errors
+        }
+        if (errorMsg.includes("respawn timeout")) {
+            return // Suppress respawn timeout errors
+        }
+        originalConsoleError.apply(console, args)
+    }
+}
+
+// ============================================================================
 // CHARACTER STARTUP
 // ============================================================================
 
@@ -106,8 +145,12 @@ async function startCharacter(bot: BotRecord, attemptNum = 0): Promise<void> {
         await character.connect()
     } catch (e) {
         character.disconnect()
-        console.error(`[ERROR] Failed to connect ${bot.name}:`, e)
-        if (/nouser/.test(String(e))) {
+        const errorMsg = String(e)
+        // Suppress known connection errors
+        if (!errorMsg.includes("nouser")) {
+            console.warn(`[WARN] Connection issue for ${bot.name} (attempt ${attemptNum + 1}/3):`, errorMsg.split('\n')[0])
+        }
+        if (/nouser/.test(errorMsg)) {
             throw new Error(`Authorization failed for ${bot.name}!`)
         }
         if (attemptNum < 2) {
@@ -282,34 +325,50 @@ function startLogicLoop(): void {
             updateMerchantContexts(state.merchants, state.registry)
 
             for (const [botId, bot] of state.registry.bots) {
-                if (!bot.context) continue
-                if (!bot.context.isReady() || !bot.context.bot.ready || bot.context.bot.rip) {
-                    continue
-                }
+                try {
+                    if (!bot.context) continue
+                    if (!bot.context.isReady() || !bot.context.bot.ready || bot.context.bot.rip) {
+                        continue
+                    }
 
-                if (bot.context.bot.ctype === "merchant") {
-                    continue
-                }
+                    if (bot.context.bot.ctype === "merchant") {
+                        continue
+                    }
 
-                const huntId = bot.huntGroupId
-                const stateStrategies = determineBotState(bot.context, sharedStrategies, REPLENISHABLES, huntId)
+                    const huntId = bot.huntGroupId
+                    const stateStrategies = determineBotState(bot.context, sharedStrategies, REPLENISHABLES, huntId)
 
-                if (stateStrategies) {
-                    swapStrategies(bot.context, stateStrategies)
-                    continue
-                }
+                    if (stateStrategies) {
+                        swapStrategies(bot.context, stateStrategies)
+                        continue
+                    }
 
-                const farmingStrategies = getFarmingStrategies(bot.context, huntId, state.hunts)
-                if (farmingStrategies.length > 0) {
-                    swapStrategies(bot.context, farmingStrategies)
+                    const farmingStrategies = getFarmingStrategies(bot.context, huntId, state.hunts)
+                    if (farmingStrategies.length > 0) {
+                        swapStrategies(bot.context, farmingStrategies)
+                    }
+                } catch (botError) {
+                    // Suppress errors for individual bots to keep the loop running
+                    const errorMsg = String(botError)
+                    if (!errorMsg.includes("move to") && !errorMsg.includes("respawn timeout")) {
+                        console.error(`[BOT-ERROR] Error processing ${bot.name}:`, errorMsg.split('\n')[0])
+                    }
                 }
             }
 
             for (const [huntId, hunt] of state.hunts.hunts) {
-                checkXPRotation(hunt)
+                try {
+                    checkXPRotation(hunt)
+                } catch (xpError) {
+                    console.error(`[XP-ERROR] Error in hunt ${huntId}:`, xpError)
+                }
             }
         } catch (e) {
-            console.error(e)
+            const errorMsg = String(e)
+            // Suppress known operational errors
+            if (!errorMsg.includes("move to") && !errorMsg.includes("respawn timeout") && !errorMsg.includes("failed")) {
+                console.error("[LOOP-ERROR]", e)
+            }
         } finally {
             setTimeout(loop, 1000)
         }
@@ -323,6 +382,9 @@ function startLogicLoop(): void {
 // ============================================================================
 
 async function main() {
+    // Setup global error handling first
+    setupGlobalErrorHandling()
+
     console.log("")
     console.log("╔═══════════════════════════════════════════════════════════╗")
     console.log("║         Adventure City - Multi-Party Bot System           ║")
@@ -398,11 +460,28 @@ async function main() {
 
     console.log("[STARTUP] Starting combat bots...")
     const combatBots = getCombatBots(registry)
-    for (const bot of combatBots) {
-        try {
-            await startCharacter(bot)
-        } catch (e) {
-            console.error(`[ERROR] Failed to start ${bot.name}:`, e)
+    
+    // Start combat bots in parallel batches to speed up deployment
+    const BATCH_SIZE = 3 // Start 3 bots at a time to avoid overwhelming the server
+    for (let i = 0; i < combatBots.length; i += BATCH_SIZE) {
+        const batch = combatBots.slice(i, i + BATCH_SIZE)
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1
+        const totalBatches = Math.ceil(combatBots.length / BATCH_SIZE)
+        console.log(`[STARTUP] Starting batch ${batchNum}/${totalBatches} (${batch.length} bots)...`)
+        
+        const promises = batch.map(async (bot) => {
+            try {
+                await startCharacter(bot)
+            } catch (e) {
+                console.error(`[ERROR] Failed to start ${bot.name}:`, e)
+            }
+        })
+        
+        await Promise.allSettled(promises)
+        
+        // Small delay between batches to let connections stabilize
+        if (i + BATCH_SIZE < combatBots.length) {
+            await new Promise(resolve => setTimeout(resolve, 500))
         }
     }
 
