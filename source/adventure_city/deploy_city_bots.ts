@@ -1,587 +1,321 @@
 import AL, { CharacterType, ItemName, Mage, Merchant, Paladin, PingCompensatedCharacter, Priest, Ranger, Rogue, ServerIdentifier, ServerRegion, Warrior } from "alclient"
-import { AvoidStackingStrategy } from "../strategy_pattern/strategies/avoid_stacking.js"
-import { BaseStrategy } from "../strategy_pattern/strategies/base.js"
-import { BuyStrategy } from "../strategy_pattern/strategies/buy.js"
-import { ChargeStrategy } from "../strategy_pattern/strategies/charge.js"
 import { Strategist, Strategy } from "../strategy_pattern/context.js"
-import { ElixirStrategy } from "../strategy_pattern/strategies/elixir.js"
-import { ItemStrategy } from "../strategy_pattern/strategies/item.js"
-import { getItemsToCompoundOrUpgrade } from "../base/items.js"
-import { MagiportOthersSmartMovingToUsStrategy } from "../strategy_pattern/strategies/magiport.js"
-import { AcceptPartyRequestStrategy, RequestPartyStrategy } from "../strategy_pattern/strategies/party.js"
-import { PartyHealStrategy } from "../strategy_pattern/strategies/partyheal.js"
-import { RespawnStrategy } from "../strategy_pattern/strategies/respawn.js"
-import { GiveRogueSpeedStrategy } from "../strategy_pattern/strategies/rspeed.js"
-import { SellStrategy } from "../strategy_pattern/strategies/sell.js"
-
-import { MageAttackStrategy } from "../strategy_pattern/strategies/attack_mage.js"
-import { PaladinAttackStrategy } from "../strategy_pattern/strategies/attack_paladin.js"
-import { PriestAttackStrategy } from "../strategy_pattern/strategies/attack_priest.js"
-import { RangerAttackStrategy } from "../strategy_pattern/strategies/attack_ranger.js"
-import { RogueAttackStrategy } from "../strategy_pattern/strategies/attack_rogue.js"
-import { WarriorAttackStrategy } from "../strategy_pattern/strategies/attack_warrior.js"
-import { GetHolidaySpiritStrategy, GetReplenishablesStrategy, ImprovedMoveStrategy } from "../strategy_pattern/strategies/move.js"
-import { CitizenAuraEnhancedMoveStrategy } from "../strategy_pattern/strategies/citizen_aura.js"
-import { MoveToBankAndDepositStuffStrategy } from "../strategy_pattern/strategies/bank.js"
-import { BaseAttackStrategy } from "../strategy_pattern/strategies/attack.js"
+import { ItemConfig } from "../base/itemsNew.js"
 import { DEFAULT_IDENTIFIER, DEFAULT_REGION } from "../base/defaults.js"
-import { AvoidDeathStrategy } from "../strategy_pattern/strategies/avoid_death.js"
-import { ItemConfig, SELL_TO_NPC } from "../base/itemsNew.js"
-import { startMerchant as startMerchantStrategy, defaultNewMerchantStrategyOptions, NewMerchantStrategyOptions } from "../merchant/strategy.js"
-import { ToggleStandStrategy } from "../strategy_pattern/strategies/stand.js"
-import { TrackerStrategy } from "../strategy_pattern/strategies/tracker.js"
+import { getItemsToCompoundOrUpgrade } from "../base/items.js"
 
-import fs from "fs"
+import { AccountConfig, BotRecord, DeploymentState } from "./config/types.js"
+import { createDefaultDeployment, DEFAULT_ITEM_CONFIG, DEFAULT_REPLENISHABLES, MERCHANT_GOLD_TO_HOLD } from "./config/deployment.js"
+import { loadAccountConfigs } from "./utils/config_loader.js"
+import { buildBotRegistry, getCombatBots, getMerchantBots } from "./core/bot_registry.js"
+import { buildPartyManager, updatePartyContexts, getPartyLeaderName } from "./core/party_manager.js"
+import { buildHuntManager, updateHuntContexts } from "./core/hunt_manager.js"
+import { buildMerchantManager, updateMerchantContexts } from "./core/merchant_manager.js"
+import { SharedStrategies, createSharedStrategies, swapStrategies, applySharedStrategies, determineBotState, getFarmingStrategies } from "./systems/strategy_applier.js"
+import { checkXPRotation, initXPRotator } from "./systems/xp_rotator.js"
+
 import path from "path"
 import { fileURLToPath } from "url"
 
 // ============================================================================
-// INITIALIZE GAME DATA (must happen before strategies are created)
+// INITIALIZE GAME DATA
 // ============================================================================
 
-// Configure for LOCAL server (not Steam)
-AL.Game.setServer("http://127.0.0.1:8090")  // Your local server URL
+AL.Game.setServer("http://127.0.0.1:8090")
 await Promise.all([AL.Game.loginJSONFile("../../credentials.json", false), AL.Game.getGData(true)])
 await AL.Pathfinder.prepare(AL.Game.G, { cheat: false })
-
-// await AL.Game.updateServersAndCharacters()
-
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-/**
- * Path to folder containing account JSON files
- * Each JSON file should have this format:
- * {
- *   "accountName": "leeroi2",
- *   "credentials": {
- *     "userID": "1234567890123456",
- *     "userAuth": "abcdefghijklmnopqrs"
- *   },
- *   "characters": [
- *     { "enabled": true, "name": "Lucky2", "type": "mage", "isPartyLeader": true },
- *     { "enabled": true, "name": "Melok2", "type": "priest", "isPartyLeader": false }
- *   ]
- * }
- */
 const ACCOUNTS_FOLDER = "accounts"
-
-/**
- * Item configuration for crab farming
- */
-const CRABRAVE_ITEM_CONFIG: ItemConfig = {
-    "cclaw": {...SELL_TO_NPC,},
-    "hpamulet": { ...SELL_TO_NPC, },
-    "hpbelt": {...SELL_TO_NPC,},
-    "stinger": {...SELL_TO_NPC,},
-    "wcap": {        
-        buy: true,
-        buyPrice: "ponty",
-        upgradeUntilLevel: 8,
-    },
-    "wshoes": {
-        buy: true,
-        buyPrice: "ponty",
-        upgradeUntilLevel: 8,
-    },
-    "ringsj": {         
-        buy: true,
-        buyPrice: "ponty",
-        upgradeUntilLevel: 4,
-    },
-    "sshield": {
-        buy: true,
-        buyPrice: "ponty",
-        useScroll1FromLevel: 1,
-        useScroll2FromLevel: 6,
-        upgradeUntilLevel: 8,
-    },
-    "elixirluck": {hold: true, holdSlot: 37, replenish: 4},
+const ITEM_CONFIG: ItemConfig = {
+    "cclaw": { sell: true, sellPrice: "npc" as const },
+    "hpamulet": { sell: true, sellPrice: "npc" as const },
+    "hpbelt": { sell: true, sellPrice: "npc" as const },
+    "stinger": { sell: true, sellPrice: "npc" as const },
+    "wcap": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 8 },
+    "wshoes": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 8 },
+    "ringsj": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 4 },
+    "sshield": { buy: true, buyPrice: "ponty" as const, useScroll1FromLevel: 1, useScroll2FromLevel: 6, upgradeUntilLevel: 8 },
+    "elixirluck": { hold: true, holdSlot: 37, replenish: 4 },
     "hpot1": { hold: true, holdSlot: 39, replenish: 2000 },
     "mpot1": { hold: true, holdSlot: 38, replenish: 2000 },
     "computer": { hold: true, holdSlot: 40 },
     "tracker": { hold: true, holdSlot: 41 },
 }
+const REPLENISHABLES = new Map<ItemName, number>(DEFAULT_REPLENISHABLES)
+const MERCHANT_GOLD = MERCHANT_GOLD_TO_HOLD
 
-const REPLENISHABLES = new Map<ItemName, number>([
-    ["hpot1", 2500],
-    ["mpot1", 2500],
-    ["elixirluck", 4],
-])
-
-const SERVER_REGION: ServerRegion = DEFAULT_REGION
-const SERVER_IDENTIFIER: ServerIdentifier = DEFAULT_IDENTIFIER
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const accountsPath = path.resolve(__dirname, "..", "..", ACCOUNTS_FOLDER)
 
 // ============================================================================
-// ACCOUNT CONFIGURATION LOADING
+// GLOBAL STATE
 // ============================================================================
 
-interface AccountConfig {
-    accountName: string
-    credentials: {
-        userID: string
-        userAuth: string
-    }
-    characters: {
-        enabled: boolean
-        name: string
-        type: CharacterType
-        id: string
-        isPartyLeader?: boolean
-    }[]
-}
+const ALL_CONTEXTS: Strategist<PingCompensatedCharacter>[] = []
 
-function loadAccountConfigs(): AccountConfig[] {
-    const __filename = fileURLToPath(import.meta.url)
-    const __dirname = path.dirname(__filename)
-    const accountsPath = path.resolve(__dirname, "..", "..", ACCOUNTS_FOLDER)
-    
-    const configs: AccountConfig[] = []
-    
-    if (!fs.existsSync(accountsPath)) {
-        console.log(`[CONFIG] Accounts folder not found: ${accountsPath}`)
-        console.log(`[CONFIG] Creating folder. Add your account JSON files there.`)
-        fs.mkdirSync(accountsPath, { recursive: true })
-        return configs
-    }
-    
-    const files = fs.readdirSync(accountsPath).filter(f => f.endsWith(".json"))
-    
-    if (files.length === 0) {
-        console.log(`[CONFIG] No JSON files found in ${accountsPath}`)
-        return configs
-    }
-    
-    for (const file of files) {
-        try {
-            const filePath = path.join(accountsPath, file)
-            const content = fs.readFileSync(filePath, "utf-8")
-            const config: AccountConfig = JSON.parse(content)
-            
-            // Validate required fields
-            if (!config.accountName) {
-                console.warn(`[CONFIG] Skipping ${file}: missing accountName`)
-                continue
-            }
-            if (!config.credentials?.userID || !config.credentials?.userAuth) {
-                console.warn(`[CONFIG] Skipping ${file}: missing credentials`)
-                continue
-            }
-            if (!config.characters || !Array.isArray(config.characters)) {
-                console.warn(`[CONFIG] Skipping ${file}: missing characters array`)
-                continue
-            }
-            
-            configs.push(config)
-            console.log(`[CONFIG] Loaded account: ${config.accountName} (${config.characters.length} characters)`)
-        } catch (e) {
-            console.error(`[CONFIG] Error loading ${file}:`, e)
-        }
-    }
-    
-    return configs
-}
+let sharedStrategies: SharedStrategies
+let state: DeploymentState
 
 // ============================================================================
-// STRATEGIES
+// CHARACTER STARTUP
 // ============================================================================
 
-const CONTEXTS: Strategist<PingCompensatedCharacter>[] = []
+async function startCharacter(bot: BotRecord, attemptNum = 0): Promise<void> {
+    const party = bot.partyId ? state.parties.parties.get(bot.partyId) : null
+    const serverRegion = party?.server.region ?? DEFAULT_REGION as ServerRegion
+    const serverId = party?.server.identifier ?? DEFAULT_IDENTIFIER as ServerIdentifier
+    const serverData = AL.Game.servers[serverRegion]?.[serverId]
 
-const avoidStackingStrategy = new AvoidStackingStrategy()
-const avoidDeathStrategy = new AvoidDeathStrategy()
-const bankStrategy = new MoveToBankAndDepositStuffStrategy()
-const baseStrategy = new BaseStrategy(CONTEXTS)
-const buyStrategy = new BuyStrategy({
-    contexts: CONTEXTS,
-    itemConfig: CRABRAVE_ITEM_CONFIG
-})
-const chargeStrategy = new ChargeStrategy()
-const elixirStrategy = new ElixirStrategy("elixirluck")
-const getHolidaySpiritStrategy = new GetHolidaySpiritStrategy()
-const getReplenishablesStrategy = new GetReplenishablesStrategy({
-    contexts: CONTEXTS,
-    replenishables: REPLENISHABLES
-})
-// Item strategies - separate for fighters (with transfer) and merchant (without transfer)
-// Merchant name will be set dynamically when known
-let fighterItemStrategy: ItemStrategy<PingCompensatedCharacter>
-let merchantItemStrategy: ItemStrategy<PingCompensatedCharacter>
-const magiportStrategy = new MagiportOthersSmartMovingToUsStrategy(CONTEXTS)
-
-const monsterToFarm = "armadillo";
-
-const moveStrategy = new ImprovedMoveStrategy(monsterToFarm
-    // {
-    // farmMonster: monsterToFarm,
-    // idlePosition: { map: "main", x: -1156, y: -92 },
-    // npcName: "citizen0",
-    // auraRange: 310,  // Server: distance < 320 gives aura, use 310 to ensure we get it
-    // prioritizeAura: true
-// }
-)
-const attackStrategies: { [T in Exclude<CharacterType, "merchant">]: BaseAttackStrategy<PingCompensatedCharacter> } = {
-    mage: new MageAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
-    paladin: new PaladinAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
-    priest: new PriestAttackStrategy({ contexts: CONTEXTS, disableCurse: true, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
-    ranger: new RangerAttackStrategy({ contexts: CONTEXTS, disableHuntersMark: true, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
-    rogue: new RogueAttackStrategy({ contexts: CONTEXTS, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true }),
-    warrior: new WarriorAttackStrategy({ contexts: CONTEXTS, disableAgitate: true, type: monsterToFarm, enableTargetDistribution: true, enableTimeDistribution: true })
-}
-
-// Merchant configuration
-const MERCHANT_GOLD_TO_HOLD = 3_000_000
-
-const partyAcceptStrategy =
-    new AcceptPartyRequestStrategy(/** TODO: TEMP: Allow anyone to join { allowList: PARTY_ALLOWLIST } */)
-const partyHealStrategy = new PartyHealStrategy(CONTEXTS)
-const partyRequestStrategy = new RequestPartyStrategy("")  // Will be set in main()
-const respawnStrategy = new RespawnStrategy()
-const rspeedStrategy = new GiveRogueSpeedStrategy()
-const sellStrategy = new SellStrategy({
-    itemConfig: CRABRAVE_ITEM_CONFIG
-})
-
-const currentSetups = new Map<
-    Strategist<PingCompensatedCharacter>,
-    Strategy<PingCompensatedCharacter>[]
->()
-
-const swapStrategies = (context: Strategist<PingCompensatedCharacter>, strategies: Strategy<PingCompensatedCharacter>[]) => {
-    for (const strategy of currentSetups.get(context) ?? []) {
-        if (strategies.includes(strategy)) continue
-        context.removeStrategy(strategy)
+    if (!serverData) {
+        throw new Error(`Server data not found for ${serverRegion}/${serverId}`)
     }
 
-    for (const strategy of strategies) {
-        if (context.hasStrategy(strategy)) continue
-        context.applyStrategy(strategy)
+    let character: PingCompensatedCharacter
+    switch (bot.type) {
+        case "mage":
+            character = new AL.Mage(bot.credentials.userID, bot.credentials.userAuth, bot.characterId, AL.Game.G, serverData)
+            break
+        case "paladin":
+            character = new AL.Paladin(bot.credentials.userID, bot.credentials.userAuth, bot.characterId, AL.Game.G, serverData)
+            break
+        case "priest":
+            character = new AL.Priest(bot.credentials.userID, bot.credentials.userAuth, bot.characterId, AL.Game.G, serverData)
+            break
+        case "ranger":
+            character = new AL.Ranger(bot.credentials.userID, bot.credentials.userAuth, bot.characterId, AL.Game.G, serverData)
+            break
+        case "rogue":
+            character = new AL.Rogue(bot.credentials.userID, bot.credentials.userAuth, bot.characterId, AL.Game.G, serverData)
+            break
+        case "warrior":
+            character = new AL.Warrior(bot.credentials.userID, bot.credentials.userAuth, bot.characterId, AL.Game.G, serverData)
+            break
+        case "merchant":
+            character = new AL.Merchant(bot.credentials.userID, bot.credentials.userAuth, bot.characterId, AL.Game.G, serverData)
+            break
+        default:
+            throw new Error(`Unsupported character type: ${bot.type}`)
     }
 
-    currentSetups.set(context, strategies)
-}
-
-const contextsLogic = async () => {
     try {
-        for (const context of CONTEXTS) {
-            if (!context.isReady() || !context.bot.ready || context.bot.rip) {
-                continue
-            }
-
-            // Merchants handle their own logic via NewMerchantStrategy
-            if (context.bot.ctype === "merchant") {
-                continue
-            }
-
-            if (context.bot.S.holidayseason && !context.bot.s.holidayspirit) {
-                swapStrategies(context, [getHolidaySpiritStrategy])
-                continue
-            }
-
-            if (context.bot.esize <= 0) {
-                swapStrategies(context, [bankStrategy])
-                continue
-            }
-
-            for (const [item, numHold] of REPLENISHABLES) {
-                const numHas = context.bot.countItem(item, context.bot.items)
-                if (numHas > (numHold / 4)) continue
-                const numWant = numHold - numHas
-                if (!context.bot.canBuy(item, { ignoreLocation: true, quantity: numWant })) continue
-
-                console.info(`swapping for replenish for bot: ${context.bot.name}`)
-                swapStrategies(context, [getReplenishablesStrategy])
-                return
-            }
-
-            swapStrategies(context, [moveStrategy, attackStrategies[context.bot.ctype]])
-        }
+        await character.connect()
     } catch (e) {
-        console.error(e)
-    } finally {
-        setTimeout(contextsLogic, 1000)
-    }
-}
-contextsLogic()
-
-async function startShared(context: Strategist<PingCompensatedCharacter>) {
-    // Merchants don't join parties or use these strategies
-    if (context.bot.ctype === "merchant") {
-        return
-    }
-
-    context.applyStrategy(partyAcceptStrategy)
-
-    if (context.bot.id !== partyRequestStrategy.partyLeader) {
-        context.applyStrategy(partyRequestStrategy)
+        character.disconnect()
+        console.error(`[ERROR] Failed to connect ${bot.name}:`, e)
+        if (/nouser/.test(String(e))) {
+            throw new Error(`Authorization failed for ${bot.name}!`)
+        }
+        if (attemptNum < 2) {
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            return startCharacter(bot, attemptNum + 1)
+        }
+        throw new Error(`Failed starting ${bot.name}!`)
     }
 
-    context.applyStrategy(buyStrategy)
-    context.applyStrategy(sellStrategy)
-    context.applyStrategy(avoidStackingStrategy)
-    context.applyStrategy(avoidDeathStrategy)
-    context.applyStrategy(respawnStrategy)
-    context.applyStrategy(elixirStrategy)
-    if (fighterItemStrategy) {
-        context.applyStrategy(fighterItemStrategy)
+    if (bot.type === "merchant") {
+        console.log(`[MERCHANT] Items for upgrade:`)
+        const okay = await getItemsToCompoundOrUpgrade(character as Merchant)
+        console.log(okay)
     }
-    CONTEXTS.push(context)
-}
 
-async function startMage(context: Strategist<Mage>) {
-    startShared(context)
-    context.applyStrategy(magiportStrategy)
-}
-
-async function startPaladin(context: Strategist<Paladin>) {
-    startShared(context)
-}
-
-async function startPriest(context: Strategist<Priest>) {
-    startShared(context)
-    context.applyStrategy(partyHealStrategy)
-}
-
-async function startRanger(context: Strategist<Ranger>) {
-    startShared(context)
-}
-
-async function startRogue(context: Strategist<Rogue>) {
-    startShared(context)
-    context.applyStrategy(rspeedStrategy)
-}
-
-async function startWarrior(context: Strategist<Warrior>) {
-    startShared(context)
-    context.applyStrategy(chargeStrategy)
-}
-
-async function startMerchant(context: Strategist<Merchant>) {
-    // Merchants don't use startShared - they have their own strategy
-    CONTEXTS.push(context)
-
-    // Apply sell strategy to merchant so it can sell NPC-marked items from inventory
-    context.applyStrategy(sellStrategy)
-
-    const merchantFriends = CONTEXTS.filter(c => c.bot.ctype !== "merchant")
-
-    console.log(`[MERCHANT] Starting merchant ${context.bot.name}`)
-    console.log(`[MERCHANT] Total CONTEXTS: ${CONTEXTS.length}`)
-    console.log(`[MERCHANT] Merchant friends (non-merchant): ${merchantFriends.length}`)
-    for (const friend of merchantFriends) {
-        console.log(`[MERCHANT]   - ${friend.bot.name} (${friend.bot.ctype}) on ${friend.bot.serverData?.region}/${friend.bot.serverData?.name}`)
+    let context: Strategist<PingCompensatedCharacter>
+    switch (bot.type) {
+        case "mage":
+            context = new Strategist<Mage>(character as Mage, sharedStrategies.base)
+            break
+        case "paladin":
+            context = new Strategist<Paladin>(character as Paladin, sharedStrategies.base)
+            break
+        case "priest":
+            context = new Strategist<Priest>(character as Priest, sharedStrategies.base)
+            break
+        case "ranger":
+            context = new Strategist<Ranger>(character as Ranger, sharedStrategies.base)
+            break
+        case "rogue":
+            context = new Strategist<Rogue>(character as Rogue, sharedStrategies.base)
+            break
+        case "warrior":
+            context = new Strategist<Warrior>(character as Warrior, sharedStrategies.base)
+            break
+        case "merchant":
+            context = new Strategist<Merchant>(character as Merchant, sharedStrategies.base)
+            break
+        default:
+            context = new Strategist<PingCompensatedCharacter>(character, sharedStrategies.base)
+            break
     }
-    console.log(`[MERCHANT] Merchant server: ${context.bot.serverData?.region}/${context.bot.serverData?.name}`)
 
-    // Create item strategies now that we know the merchant name
-    // Fighters transfer shields to the merchant
-    fighterItemStrategy = new ItemStrategy({ 
-        contexts: CONTEXTS, 
-        itemConfig: CRABRAVE_ITEM_CONFIG,
-        transferItemsTo: context.bot.name  // Transfer shields to merchant
+    bot.context = context
+    bot.state = "ready"
+    ALL_CONTEXTS.push(context)
+
+    // Add context to the hunt's contexts array immediately, before applySharedStrategies
+    // This is critical: TimeDistributor is created in onApply and reads contexts at that moment
+    if (bot.huntGroupId) {
+        const hunt = state.hunts.hunts.get(bot.huntGroupId)
+        if (hunt && !hunt.contexts.includes(context)) {
+            hunt.contexts.push(context)
+        }
+    }
+
+    const partyId = bot.partyId
+    let partyLeaderName: string | null = null
+    if (partyId) {
+        partyLeaderName = getPartyLeaderName(state.parties, state.registry, partyId)
+    }
+
+    if (bot.type === "merchant") {
+        await startMerchant(context as Strategist<Merchant>, bot)
+    } else {
+        applySharedStrategies(context, bot.name, partyLeaderName, sharedStrategies, bot.huntGroupId)
+    }
+
+    console.log(`[START] Started ${bot.name} (${bot.type})`)
+}
+
+async function startMerchant(context: Strategist<Merchant>, bot: BotRecord): Promise<void> {
+    context.applyStrategy(sharedStrategies.sell)
+
+    const fighterContexts: Strategist<PingCompensatedCharacter>[] = []
+    for (const [merchantId, merchant] of state.merchants.merchants) {
+        if (merchant.botId === bot.botId) {
+            for (const partyId of merchant.servedPartyIds) {
+                const party = state.parties.parties.get(partyId)
+                if (party) {
+                    fighterContexts.push(...party.contexts)
+                }
+            }
+        }
+    }
+
+    const uniqueContexts = Array.from(new Set(fighterContexts))
+
+    console.log(`[MERCHANT] Starting merchant ${bot.name}`)
+    console.log(`[MERCHANT] Total fighter contexts: ${uniqueContexts.length}`)
+    for (const ctx of uniqueContexts) {
+        console.log(`[MERCHANT]   - ${ctx.bot.name} (${ctx.bot.ctype})`)
+    }
+
+    const fighterItemStrategy = new (await import("../strategy_pattern/strategies/item.js")).ItemStrategy<PingCompensatedCharacter>({
+        contexts: uniqueContexts,
+        itemConfig: ITEM_CONFIG,
+        transferItemsTo: bot.name,
     })
-    // Merchant doesn't transfer items, just upgrades and banks them
-    merchantItemStrategy = new ItemStrategy({ 
-        contexts: CONTEXTS, 
-        itemConfig: CRABRAVE_ITEM_CONFIG
+
+    const merchantItemStrategy = new (await import("../strategy_pattern/strategies/item.js")).ItemStrategy<PingCompensatedCharacter>({
+        contexts: uniqueContexts,
+        itemConfig: ITEM_CONFIG,
     })
-    
-    // Apply fighter item strategy to all existing fighter contexts
-    for (const ctx of CONTEXTS) {
+
+    for (const ctx of uniqueContexts) {
         if (ctx.bot.ctype !== "merchant") {
             ctx.applyStrategy(fighterItemStrategy)
         }
     }
 
-    const merchantOptions: NewMerchantStrategyOptions = {
-        contexts: merchantFriends,
-        debug: true,
-        defaultPosition: {
-            map: "main" as const,
-            x: 0,
-            y: 0,
-        },
-        goldToHold: MERCHANT_GOLD_TO_HOLD,
-        itemConfig: CRABRAVE_ITEM_CONFIG,
+    const { startMerchant: startMerchantStrategy, defaultNewMerchantStrategyOptions } = await import("../merchant/strategy.js")
 
-        enableMluck: {
-            contexts: true,
-            others: true,
-            self: true,
-            travel: true,
-        },
+    const merchantOptions = {
+        ...defaultNewMerchantStrategyOptions,
+        contexts: uniqueContexts,
+        debug: true as const,
+        defaultPosition: { map: "main" as const, x: 0, y: 0 },
+        goldToHold: MERCHANT_GOLD,
+        itemConfig: ITEM_CONFIG,
+        enableMluck: { contexts: true as const, others: true as const, self: true as const, travel: true as const },
     }
 
-    startMerchantStrategy(context, merchantFriends, merchantOptions)
-
-    // Apply merchant item strategy to the merchant
+    startMerchantStrategy(context, uniqueContexts, merchantOptions)
     context.applyStrategy(merchantItemStrategy)
 
-    console.log(`[START] Started merchant: ${context.bot.name}`)
+    console.log(`[START] Started merchant: ${bot.name}`)
 }
 
-const stopCharacter = async (characterName: string) => {
-    let context: Strategist<PingCompensatedCharacter>
-    for (const find of CONTEXTS) {
-        if (find.bot.name !== characterName) continue
-        context = find
-        break
+// ============================================================================
+// TIME DISTRIBUTOR RESET
+// ============================================================================
+
+function resetTimeDistributors(state: DeploymentState): void {
+    for (const [huntId, hunt] of state.hunts.hunts) {
+        for (const [, attackStrategy] of hunt.attackStrategies) {
+            const strategy = attackStrategy as any
+            if (strategy.sharedTimeDistributor) {
+                strategy.sharedTimeDistributor = null
+                strategy.botTimeDistributor?.clear()
+            }
+        }
     }
 
-    if (!context) return
-    const publicIndex = CONTEXTS.indexOf(context)
-    context.stop()
-    CONTEXTS.splice(publicIndex, 1)
-    console.log(`[STOP] Stopped character: ${characterName}`)
+    // Re-apply attack strategies to all combat contexts to recreate TimeDistributors
+    for (const [botId, bot] of state.registry.bots) {
+        if (!bot.context || bot.type === "merchant") continue
+        if (!bot.huntGroupId) continue
+
+        const attackStrategy = state.hunts.hunts.get(bot.huntGroupId)?.attackStrategies.get(bot.type)
+        if (attackStrategy) {
+            bot.context.applyStrategy(attackStrategy)
+        }
+    }
+
+    console.log(`[TIME-DIST] Reset and recreated TimeDistributors for all hunts`)
 }
 
-const startCharacter = async (
-    credentials: { userID: string; userAuth: string },
-    name: string,
-    type: CharacterType,
-    characterID: string,
-    attemptNum = 0
-) => {
-    // Debug output
-    console.log(`[DEBUG] startCharacter called:`)
-    console.log(`  - account userID: ${credentials.userID}`)
-    console.log(`  - account userAuth: ${credentials.userAuth}`)
-    console.log(`  - character name: ${name}`)
-    console.log(`  - character type: ${type}`)
-    console.log(`  - characterID: ${characterID}`)
-    console.log(`  - attemptNum: ${attemptNum}`)
-    console.log(`  - SERVER_REGION: ${SERVER_REGION}`)
-    console.log(`  - SERVER_IDENTIFIER: ${SERVER_IDENTIFIER}`)
-    console.log(`  - AL.Game.servers exists: ${AL.Game.servers ? 'yes' : 'no'}`)
-    if (AL.Game.servers) {
-        console.log(`  - AL.Game.servers[${SERVER_REGION}]: ${AL.Game.servers[SERVER_REGION] ? 'exists' : 'undefined'}`)
-        if (AL.Game.servers[SERVER_REGION]) {
-            console.log(`  - AL.Game.servers[${SERVER_REGION}][${SERVER_IDENTIFIER}]: ${JSON.stringify(AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER])}`)
+// ============================================================================
+// MAIN LOGIC LOOP
+// ============================================================================
+
+function startLogicLoop(): void {
+    for (const [huntId, hunt] of state.hunts.hunts) {
+        initXPRotator(hunt)
+    }
+
+    const loop = async () => {
+        try {
+            updatePartyContexts(state.parties, state.registry)
+            updateHuntContexts(state.hunts, state.registry, state.allCombatContexts)
+            updateMerchantContexts(state.merchants, state.registry)
+
+            for (const [botId, bot] of state.registry.bots) {
+                if (!bot.context) continue
+                if (!bot.context.isReady() || !bot.context.bot.ready || bot.context.bot.rip) {
+                    continue
+                }
+
+                if (bot.context.bot.ctype === "merchant") {
+                    continue
+                }
+
+                const huntId = bot.huntGroupId
+                const stateStrategies = determineBotState(bot.context, sharedStrategies, REPLENISHABLES, huntId)
+
+                if (stateStrategies) {
+                    swapStrategies(bot.context, stateStrategies)
+                    continue
+                }
+
+                const farmingStrategies = getFarmingStrategies(bot.context, huntId, state.hunts)
+                if (farmingStrategies.length > 0) {
+                    swapStrategies(bot.context, farmingStrategies)
+                }
+            }
+
+            for (const [huntId, hunt] of state.hunts.hunts) {
+                checkXPRotation(hunt)
+            }
+        } catch (e) {
+            console.error(e)
+        } finally {
+            setTimeout(loop, 1000)
         }
     }
 
-    for (let i = 0; i < CONTEXTS.length; i++) {
-        const context = CONTEXTS[i]
-        if (context.isStopped() && context.bot.name) {
-            await stopCharacter(context.bot.name)
-            i -= 1
-        }
-    }
-
-    for (const context of CONTEXTS) {
-        if (context.bot.name == name) throw `Character '${name}' is already running!`
-    }
-
-    let bot: PingCompensatedCharacter
-    try {
-        const serverData = AL.Game.servers[SERVER_REGION][SERVER_IDENTIFIER]
-        console.log(`[DEBUG] Creating ${type} instance for ${name}...`)
-        console.log(`  Arguments:`)
-        console.log(`    - userID: ${credentials.userID}`)
-        console.log(`    - userAuth: ${credentials.userAuth}`)
-        console.log(`    - characterID: ${characterID}`)
-        console.log(`    - name: ${name}`)
-        console.log(`    - G: ${AL.Game.G ? 'defined' : 'undefined'}`)
-        console.log(`    - server: ${JSON.stringify(serverData)}`)
-
-        switch (type) {
-            case "mage": {
-                bot = new AL.Mage(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
-                break
-            }
-            case "paladin": {
-                bot = new AL.Paladin(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
-                break
-            }
-            case "priest": {
-                bot = new AL.Priest(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
-                break
-            }
-            case "ranger": {
-                bot = new AL.Ranger(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
-                break
-            }
-            case "rogue": {
-                bot = new AL.Rogue(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
-                break
-            }
-            case "warrior": {
-                bot = new AL.Warrior(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
-                break
-            }
-            case "merchant": {
-                bot = new AL.Merchant(credentials.userID, credentials.userAuth, characterID, AL.Game.G, serverData)
-
-                break
-            }
-            default: {
-                throw new Error(`Unsupported character type: ${type}`)
-            }
-        }
-        await bot.connect()
-
-        if (type === "merchant") {
-            console.log("Merchant items for upgrade:")
-            const okay = await getItemsToCompoundOrUpgrade(bot)
-            console.log(okay)
-        }
-    } catch (e) {
-        if (bot) bot.disconnect()
-        console.error(`[ERROR] Failed to connect ${name}:`, e)
-        if (/nouser/.test(e)) {
-            throw new Error(`Authorization failed for ${name}!`)
-        }
-        attemptNum += 1
-        if (attemptNum < 2) {
-            setTimeout(startCharacter, 1_000, credentials, name, type, characterID, attemptNum)
-        } else {
-            throw new Error(`Failed starting ${name}!`)
-        }
-        return
-    }
-
-    let context: Strategist<PingCompensatedCharacter>
-    switch (type) {
-        case "mage": {
-            context = new Strategist<Mage>(bot as Mage, baseStrategy)
-            startMage(context as Strategist<Mage>).catch(console.error)
-            break
-        }
-        case "paladin": {
-            context = new Strategist<Paladin>(bot as Paladin, baseStrategy)
-            startPaladin(context as Strategist<Paladin>).catch(console.error)
-            break
-        }
-        case "priest": {
-            context = new Strategist<Priest>(bot as Priest, baseStrategy)
-            startPriest(context as Strategist<Priest>).catch(console.error)
-            break
-        }
-        case "ranger": {
-            context = new Strategist<Ranger>(bot as Ranger, baseStrategy)
-            startRanger(context as Strategist<Ranger>).catch(console.error)
-            break
-        }
-        case "rogue": {
-            context = new Strategist<Rogue>(bot as Rogue, baseStrategy)
-            startRogue(context as Strategist<Rogue>).catch(console.error)
-            break
-        }
-        case "warrior": {
-            context = new Strategist<Warrior>(bot as Warrior, baseStrategy)
-            startWarrior(context as Strategist<Warrior>).catch(console.error)
-            break
-        }
-        case "merchant": {
-            context = new Strategist<Merchant>(bot as Merchant, baseStrategy)
-            startMerchant(context as Strategist<Merchant>).catch(console.error)
-            break
-        }
-    }
-
-    console.log(`[START] Started character: ${name} (${type})`)
+    loop().catch(console.error)
 }
 
 // ============================================================================
@@ -591,14 +325,13 @@ const startCharacter = async (
 async function main() {
     console.log("")
     console.log("╔═══════════════════════════════════════════════════════════╗")
-    console.log("║         Crabrave Local - Multi-Account Bot                ║")
+    console.log("║         Adventure City - Multi-Party Bot System           ║")
     console.log("╚═══════════════════════════════════════════════════════════╝")
     console.log("")
 
-    // Load account configurations from JSON files
     console.log("[CONFIG] Loading account configurations...")
-    const accountConfigs = loadAccountConfigs()
-    
+    const accountConfigs = loadAccountConfigs(accountsPath)
+
     if (accountConfigs.length === 0) {
         console.log("")
         console.log("┌───────────────────────────────────────────────────────────┐")
@@ -613,87 +346,88 @@ async function main() {
         console.log("")
         return
     }
-    
+
     console.log(`[CONFIG] Loaded ${accountConfigs.length} account(s)`)
     console.log("")
 
-    // Collect all enabled characters from all accounts
-    const allCharacters: {
-        accountName: string
-        credentials: { userID: string; userAuth: string }
-        name: string
-        type: CharacterType
-        id: string
-        isPartyLeader?: boolean
-    }[] = []
+    const deploymentConfig = createDefaultDeployment()
 
-    for (const config of accountConfigs) {
-        const enabledChars = config.characters.filter(c => c.enabled)
-        for (const char of enabledChars) {
-            allCharacters.push({
-                accountName: config.accountName,
-                credentials: config.credentials,
-                name: char.name,
-                type: char.type,
-                id: char.id,
-                isPartyLeader: char.isPartyLeader
-            })
-        }
+    console.log("[BUILD] Building bot registry...")
+    const registry = buildBotRegistry(accountConfigs, deploymentConfig)
+
+    console.log("[BUILD] Building party manager...")
+    const parties = buildPartyManager(registry, deploymentConfig.parties)
+
+    console.log("[BUILD] Building hunt manager...")
+    const hunts = buildHuntManager(registry, deploymentConfig.hunts)
+
+    console.log("[BUILD] Building merchant manager...")
+    const merchants = buildMerchantManager(registry, deploymentConfig.merchants, deploymentConfig.parties)
+
+    state = {
+        registry,
+        parties,
+        hunts,
+        merchants,
+        allCombatContexts: [],
+        allContexts: ALL_CONTEXTS,
     }
-    
-    // Determine party leader (exclude merchants)
-    const nonMerchantCharacters = allCharacters.filter(c => c.type !== "merchant")
-    const partyLeader = nonMerchantCharacters.find(c => c.isPartyLeader) || nonMerchantCharacters[0]
-    if (partyLeader) {
-        partyRequestStrategy.partyLeader = partyLeader.name
-    }
-    
+
+    console.log("")
+    console.log("[BUILD] Creating shared strategies...")
+    sharedStrategies = createSharedStrategies(hunts, ITEM_CONFIG, REPLENISHABLES)
+
+    console.log("")
     console.log("┌─────────────────────────────────────────────────────────────┐")
-    console.log("│  CHARACTER CONFIGURATION                                    │")
+    console.log("│  DEPLOYMENT SUMMARY                                         │")
     console.log("├─────────────────────────────────────────────────────────────┤")
-    console.log(`│  Total accounts: ${accountConfigs.length}                                      │`)
-    console.log(`│  Enabled characters: ${allCharacters.length}                                    │`)
-    if (partyLeader) {
-        console.log(`│  Party leader: ${partyLeader.name.padEnd(44)}│`)
-    }
+    console.log(`│  Parties: ${deploymentConfig.parties.length.toString().padEnd(49)}│`)
+    console.log(`│  Hunts: ${deploymentConfig.hunts.length.toString().padEnd(50)}│`)
+    console.log(`│  Merchants: ${deploymentConfig.merchants.length.toString().padEnd(47)}│`)
+    console.log(`│  Total bots: ${registry.bots.size.toString().padEnd(46)}│`)
     console.log("├─────────────────────────────────────────────────────────────┤")
     console.log("│  Characters to start:                                       │")
-    for (const char of allCharacters) {
-        const line = `│    - ${char.name} (${char.type}) [${char.accountName}]`
+    for (const [botId, bot] of registry.bots) {
+        const partyName = bot.partyId ? parties.parties.get(bot.partyId)?.name ?? "unknown" : "none"
+        const huntName = bot.huntGroupId ? hunts.hunts.get(bot.huntGroupId)?.name ?? "unknown" : "none"
+        const line = `│    - ${bot.name.padEnd(12)} (${bot.type.padEnd(10)}) p:${partyName.padEnd(10)} h:${huntName}`
         console.log(line.padEnd(60, " ") + "│")
     }
     console.log("└─────────────────────────────────────────────────────────────┘")
     console.log("")
 
-    console.log("Starting characters...")
-    console.log("")
-    
-    // Start combat bots first, then merchant
-    // This ensures the merchant has contexts to work with when it starts
-    const combatCharacters = allCharacters.filter(c => c.type !== "merchant")
-    const merchantCharacters = allCharacters.filter(c => c.type === "merchant")
-    
-    console.log(`[STARTUP] Starting ${combatCharacters.length} combat bot(s) first...`)
-    for (const char of combatCharacters) {
+    console.log("[STARTUP] Starting combat bots...")
+    const combatBots = getCombatBots(registry)
+    for (const bot of combatBots) {
         try {
-            await startCharacter(char.credentials, char.name, char.type, char.id)
+            await startCharacter(bot)
         } catch (e) {
-            console.error(`[ERROR] Failed to start ${char.name}:`, e)
+            console.error(`[ERROR] Failed to start ${bot.name}:`, e)
         }
     }
-    
-    console.log(`[STARTUP] Starting ${merchantCharacters.length} merchant(s)...`)
-    for (const char of merchantCharacters) {
+
+    // After all combat bots are started, reset TimeDistributors so they
+    // are recreated with the full set of contexts. Without this, the
+    // TimeDistributor would have been created with only the first bot.
+    resetTimeDistributors(state)
+
+    console.log(`[STARTUP] Starting ${getMerchantBots(registry).length} merchant(s)...`)
+    const merchantBots = getMerchantBots(registry)
+    for (const bot of merchantBots) {
         try {
-            await startCharacter(char.credentials, char.name, char.type, char.id)
+            await startCharacter(bot)
         } catch (e) {
-            console.error(`[ERROR] Failed to start ${char.name}:`, e)
+            console.error(`[ERROR] Failed to start ${bot.name}:`, e)
         }
     }
 
     console.log("")
+    console.log("[LOOP] Starting logic loop...")
+    startLogicLoop()
+
+    console.log("")
     console.log("═".repeat(60))
-    console.log("All characters processed!")
+    console.log("All characters processed! Logic loop running.")
     console.log("═".repeat(60))
 }
 
