@@ -1544,17 +1544,29 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
 
         this.loops.set("move", {
             fn: async (bot: Merchant) => {
-                if (bot.rip) return bot.respawn()
+                console.log(`[MERCHANT-LOOP] ===== Starting move loop for ${bot.name} | map=${bot.map} | x=${Math.round(bot.x)} | y=${Math.round(bot.y)} | esize=${bot.esize} | gold=${bot.gold}`)
+                
+                if (bot.rip) {
+                    console.log(`[MERCHANT-LOOP] Bot is dead, respawning`)
+                    return bot.respawn()
+                }
 
+                console.log(`[MERCHANT-LOOP] Step 1: Equip broom`)
                 await this.equipBroom(bot).catch(console.error)
 
+                console.log(`[MERCHANT-LOOP] Step 2: Join giveaways`)
                 await this.joinGiveaways(bot).catch(console.error)
+                
+                console.log(`[MERCHANT-LOOP] Step 3: Banking (doBanking)`)
                 try {
                     await this.doBanking(bot) // NOTE: Don't catch, we don't want to continue if banking fails
+                    console.log(`[MERCHANT-LOOP] Step 3a: Banking succeeded, starting upgrade cycle`)
                     // Banking succeeded, check for items to upgrade
                     await this.processUpgradeCycle(bot).catch(console.error)
+                    console.log(`[MERCHANT-LOOP] Step 3b: Upgrade cycle complete, depositing items`)
                     // After upgrade cycle, deposit upgraded items to free space
                     await this.doBanking(bot).catch(console.error)
+                    console.log(`[MERCHANT-LOOP] Step 3c: Second banking complete`)
                 } catch (e) {
                     console.error(`[MoveLoop] doBanking failed: ${e}`)
                     console.error(`[MoveLoop] Stack trace: ${e.stack}`)
@@ -1562,23 +1574,38 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                     console.error(`[MoveLoop] Bot status: rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}`)
                     // Banking failed - skip upgrade cycle, try again next loop
                 }
+                
+                console.log(`[MERCHANT-LOOP] Step 4: Check instances`)
                 await this.goCheckInstances(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 5: Get holiday spirit`)
                 await this.goGetHolidaySpirit(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 6: Deliver replenishables`)
                 await this.goDeliverReplenishables(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 7: Deliver upgrades`)
                 await this.goDeliverUpgrades(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 8: Get items from contexts`)
                 await this.goGetItemsFromContexts(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 9: MLuck`)
                 await this.goMluck(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 10: Fishing`)
                 await this.goFishing(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 11: Mining`)
                 await this.goMining(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 12: Craft`)
                 await this.goCraft(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 13: Exchange`)
                 await this.goExchange(bot).catch(console.error)
                 // TODO: Deal finder
+                console.log(`[MERCHANT-LOOP] Step 14: Sell items`)
                 await this.goSellItems(bot).catch(console.error)
+                console.log(`[MERCHANT-LOOP] Step 15: List for sale`)
                 await this.listForSale(bot).catch(console.error)
 
+                console.log(`[MERCHANT-LOOP] Step 16: Moving to default position`)
                 try {
                     console.log(`[MoveLoop] Moving to default position: from map=${bot.map}, x=${Math.round(bot.x)}, y=${Math.round(bot.y)} -> to map=${this.options.defaultPosition.map}, x=${this.options.defaultPosition.x}, y=${this.options.defaultPosition.y}`)
                     await bot.smartMove(this.options.defaultPosition)
+                    console.log(`[MERCHANT-LOOP] Step 16a: Successfully moved to default position`)
                 } catch (e) {
                     console.error(`[MoveLoop] Failed to move to default position: ${e}`)
                     console.error(`[MoveLoop] Stack trace: ${e.stack}`)
@@ -1586,6 +1613,8 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                     console.error(`[MoveLoop] Current position: map=${bot.map}, x=${bot.x}, y=${bot.y}`)
                     console.error(`[MoveLoop] Bot status: rip=${bot.rip}, moving=${bot.moving}, afk=${bot.afk}`)
                 }
+                
+                console.log(`[MERCHANT-LOOP] ===== Move loop iteration complete`)
             },
             interval: 1000,
         })
@@ -1749,7 +1778,7 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
      * Process all items for upgrade/compound - goes to scrolls, waits for completion, gets more from bank
      */
     protected async processUpgradeCycle(bot: Merchant): Promise<void> {
-        this.debug(bot, `processUpgradeCycle starting`)
+        console.log(`[UPGRADE-CYCLE] ===== Starting processUpgradeCycle | map=${bot.map} | esize=${bot.esize} | gold=${bot.gold}`)
 
         let noProgressCount = 0
         const maxNoProgressIterations = 20 // Break after 20 iterations with no progress (~10 seconds)
@@ -1833,6 +1862,10 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                     this.debug(bot, `Gold unchanged at ${bot.gold}g, cannot afford upgrade (need ${goldNeeded}g), depositing items and breaking`)
                     await bot.smartMove("bank")
                     await this.depositItemsForUpgrade(bot)
+                    // Move out of bank
+                    if (bot.map.startsWith("bank")) {
+                        await bot.smartMove("main")
+                    }
                     break
                 }
 
@@ -1841,6 +1874,10 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                     // Deposit items and break - let other cycles run to accumulate gold
                     await bot.smartMove("bank")
                     await this.depositItemsForUpgrade(bot)
+                    // Move out of bank
+                    if (bot.map.startsWith("bank")) {
+                        await bot.smartMove("main")
+                    }
                     break
                 }
 
@@ -1864,6 +1901,10 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                     // Deposit items and break
                     await bot.smartMove("bank")
                     await this.depositItemsForUpgrade(bot)
+                    // Move out of bank
+                    if (bot.map.startsWith("bank")) {
+                        await bot.smartMove("main")
+                    }
                     break
                 }
 
@@ -1913,6 +1954,11 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
 
             if (indexes.length === 0 || upgradableAfter === upgradableBefore) {
                 this.debug(bot, "No new items to upgrade/compound withdrawn from bank, cycle complete")
+                // Move out of bank before breaking
+                if (bot.map.startsWith("bank")) {
+                    this.debug(bot, "Moving out of bank - no items to upgrade")
+                    await bot.smartMove("main")
+                }
                 break
             }
 
@@ -1926,6 +1972,8 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
 
             // Continue to next iteration - will move to NPC if hasItemsInInventory is true
         }
+        
+        console.log(`[UPGRADE-CYCLE] ===== processUpgradeCycle complete | map=${bot.map} | esize=${bot.esize} | gold=${bot.gold}`)
     }
 
     /**
@@ -1966,6 +2014,12 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
                 await bot.depositItem(slot)
             }
         }
+        
+        // Move out of bank after depositing
+        if (bot.map.startsWith("bank")) {
+            this.debug(bot, "Moving out of bank after depositing items")
+            await bot.smartMove("main")
+        }
     }
 
     /**
@@ -1989,7 +2043,12 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
         const checkKey = `${bot.id}_banking`
         if (!wantToBank && checkOnlyEveryMS(checkKey, 600_000, false)) wantToBank = true
 
-        if (!wantToBank) return
+        console.log(`[BANKING] doBanking called | wantToBank=${wantToBank} | esize=${bot.esize} | gold=${bot.gold} | goldToHold=${this.options.goldToHold} | map=${bot.map}`)
+
+        if (!wantToBank) {
+            console.log(`[BANKING] Skipping banking - don't want to bank`)
+            return
+        }
 
         if (!bot.map.startsWith("bank")) {
             try {
@@ -2359,6 +2418,7 @@ export class NewMerchantStrategy implements Strategy<Merchant> {
         }
 
         // Move back to main
+        console.log(`[BANKING] doBanking complete | map=${bot.map} | esize=${bot.esize} | gold=${bot.gold}`)
         await bot.smartMove("main")
         setLastCheck(checkKey)
     }

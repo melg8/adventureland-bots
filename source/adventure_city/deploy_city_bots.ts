@@ -4,13 +4,13 @@ import { ItemConfig } from "../base/itemsNew.js"
 import { DEFAULT_IDENTIFIER, DEFAULT_REGION } from "../base/defaults.js"
 import { getItemsToCompoundOrUpgrade } from "../base/items.js"
 
-import { AccountConfig, BotRecord, DeploymentState } from "./config/types.js"
+import { AccountConfig, BotRecord, DeploymentState, MerchantRecord } from "./config/types.js"
 import { createDefaultDeployment, DEFAULT_ITEM_CONFIG, DEFAULT_REPLENISHABLES, MERCHANT_GOLD_TO_HOLD } from "./config/deployment.js"
 import { loadAccountConfigs } from "./utils/config_loader.js"
 import { buildBotRegistry, getCombatBots, getMerchantBots } from "./core/bot_registry.js"
 import { buildPartyManager, updatePartyContexts, getPartyLeaderName } from "./core/party_manager.js"
 import { buildHuntManager, updateHuntContexts } from "./core/hunt_manager.js"
-import { buildMerchantManager, updateMerchantContexts } from "./core/merchant_manager.js"
+import { buildMerchantManager, updateMerchantContexts, getFighterContextsForMerchant } from "./core/merchant_manager.js"
 import { SharedStrategies, createSharedStrategies, swapStrategies, applySharedStrategies, determineBotState, getFarmingStrategies } from "./systems/strategy_applier.js"
 import { checkXPRotation, initXPRotator } from "./systems/xp_rotator.js"
 
@@ -31,19 +31,36 @@ await AL.Pathfinder.prepare(AL.Game.G, { cheat: false })
 
 const ACCOUNTS_FOLDER = "accounts"
 const ITEM_CONFIG: ItemConfig = {
+    // Sell useless items
     "cclaw": { sell: true, sellPrice: "npc" as const },
     "hpamulet": { sell: true, sellPrice: "npc" as const },
     "hpbelt": { sell: true, sellPrice: "npc" as const },
     "stinger": { sell: true, sellPrice: "npc" as const },
-    "wcap": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 8 },
-    "wshoes": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 8 },
-    "ringsj": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 4 },
+    
+    // Buy and upgrade basic armor for all party members
+    "wcap": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 8, useScroll1FromLevel: 1, useScroll2FromLevel: 6 },
+    "wshoes": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 8, useScroll1FromLevel: 1, useScroll2FromLevel: 6 },
+    "ringsj": { sell: true, buyPrice: "ponty" as const, upgradeUntilLevel: 4 },
     "sshield": { buy: true, buyPrice: "ponty" as const, useScroll1FromLevel: 1, useScroll2FromLevel: 6, upgradeUntilLevel: 8 },
+    
+    // Basic armor pieces for buy-and-upgrade system
+    "helmet": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 7},
+    "coat": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 7},
+    "pants": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 7},
+    "shoes": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 7},
+    "gloves": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 7},
+    
+    // Weapons by class (merchant will buy and upgrade these)
+    "claw": { buy: true, buyPrice: "ponty" as const, upgradeUntilLevel: 7 },
+    
+    // Consumables
     "elixirluck": { hold: true, holdSlot: 37, replenish: 4 },
     "hpot1": { hold: true, holdSlot: 39, replenish: 2000 },
     "mpot1": { hold: true, holdSlot: 38, replenish: 2000 },
     "computer": { hold: true, holdSlot: 40 },
     "tracker": { hold: true, holdSlot: 41 },
+    
+    // Upgrade materials
 }
 const REPLENISHABLES = new Map<ItemName, number>(DEFAULT_REPLENISHABLES)
 const MERCHANT_GOLD = MERCHANT_GOLD_TO_HOLD
@@ -60,6 +77,13 @@ const ALL_CONTEXTS: Strategist<PingCompensatedCharacter>[] = []
 
 let sharedStrategies: SharedStrategies
 let state: DeploymentState
+
+// Merchant upgrade tracking
+const merchantUpgradeState = new Map<string, {
+    lastUpgradeCheck: number
+    lastDeliverUpgradesCheck: number
+    upgradeCycleActive: boolean
+}>()
 
 // ============================================================================
 // GLOBAL ERROR HANDLING
@@ -161,9 +185,9 @@ async function startCharacter(bot: BotRecord, attemptNum = 0): Promise<void> {
     }
 
     if (bot.type === "merchant") {
-        console.log(`[MERCHANT] Items for upgrade:`)
-        const okay = await getItemsToCompoundOrUpgrade(character as Merchant)
-        console.log(okay)
+        console.log(`[MERCHANT] Checking items for upgrade (will scan after merchant is fully initialized)...`)
+        // Don't scan immediately - bank data may not be available yet
+        // The merchant strategy will handle this in processUpgradeCycle
     }
 
     let context: Strategist<PingCompensatedCharacter>
@@ -255,6 +279,13 @@ async function startMerchant(context: Strategist<Merchant>, bot: BotRecord): Pro
         contexts: uniqueContexts,
         itemConfig: ITEM_CONFIG,
     })
+    
+    // Buy strategy - purchase items from other players/merchants
+    const buyStrategy = new (await import("../strategy_pattern/strategies/buy.js")).BuyStrategy<PingCompensatedCharacter>({
+        contexts: uniqueContexts,
+        itemConfig: ITEM_CONFIG,
+        enableBuyForProfit: true, // Buy from merchants to resell if profitable
+    })
 
     for (const ctx of uniqueContexts) {
         if (ctx.bot.ctype !== "merchant") {
@@ -272,12 +303,109 @@ async function startMerchant(context: Strategist<Merchant>, bot: BotRecord): Pro
         goldToHold: MERCHANT_GOLD,
         itemConfig: ITEM_CONFIG,
         enableMluck: { contexts: true as const, others: true as const, self: true as const, travel: true as const },
+        // Enable buy and upgrade for basic equipment
+        enableBuyAndUpgrade: {
+            upgradeToLevel: 8, // Upgrade equipment up to level 8
+        },
+        // Enable exchange for lost earrings and other exchangeable items
+        enableExchange: {
+            items: new Set<ItemName>(["lostearring", "monstertoken"]),
+            lostEarring: 2,
+        },
     }
 
     startMerchantStrategy(context, uniqueContexts, merchantOptions)
     context.applyStrategy(merchantItemStrategy)
+    context.applyStrategy(buyStrategy) // Enable buying from other players/merchants
 
     console.log(`[START] Started merchant: ${bot.name}`)
+}
+
+// ============================================================================
+// MERCHANT UPGRADE LOOP
+// ============================================================================
+
+async function processMerchantUpgrades(merchantRecord: MerchantRecord): Promise<void> {
+    const bot = state.registry.bots.get(merchantRecord.botId)
+    if (!bot || !bot.context || !bot.context.bot) return
+    
+    const merchant = bot.context.bot as Merchant
+    if (!merchant.ready || merchant.rip || merchant.ctype !== "merchant") return
+    
+    // Get or create upgrade state
+    let upgradeState = merchantUpgradeState.get(merchantRecord.id)
+    if (!upgradeState) {
+        upgradeState = {
+            lastUpgradeCheck: 0,
+            lastDeliverUpgradesCheck: 0,
+            upgradeCycleActive: false,
+        }
+        merchantUpgradeState.set(merchantRecord.id, upgradeState)
+    }
+    
+    try {
+        // Get fighter contexts for this merchant
+        const fighterContexts = getFighterContextsForMerchant(state.merchants, merchantRecord.id, state.registry)
+        if (fighterContexts.length === 0) return
+        
+        // Import merchant strategy to access upgrade functions
+        const { MerchantStrategy, DEFAULT_MERCHANT_MOVE_STRATEGY_OPTIONS } = await import("../merchant/strategy.js")
+        
+        // Create temporary merchant strategy to access protected methods
+        const tempMerchantStrategy = new MerchantStrategy(fighterContexts, {
+            ...DEFAULT_MERCHANT_MOVE_STRATEGY_OPTIONS,
+            enableBuyAndUpgrade: {
+                upgradeToLevel: 8, // Don't upgrade items beyond level 8
+            },
+            defaultPosition: { map: "main", x: 0, y: 0 },
+            goldToHold: MERCHANT_GOLD,
+            itemsToHold: new Set(Object.keys(ITEM_CONFIG).filter(k => ITEM_CONFIG[k as ItemName]?.hold) as ItemName[]),
+        })
+        
+        // Process upgrade cycle - this handles buying and upgrading basic items
+        const now = Date.now()
+        
+        // Check if we should run upgrade cycle (every 30 seconds)
+        if (now - upgradeState.lastUpgradeCheck > 30000 && !upgradeState.upgradeCycleActive) {
+            upgradeState.lastUpgradeCheck = now
+            upgradeState.upgradeCycleActive = true
+            
+            try {
+                console.log(`[MERCHANT-UPGRADE] ${merchant.name}: Starting upgrade cycle`)
+                
+                // Access protected method through type casting
+                const processUpgradeCycle = (tempMerchantStrategy as any).processUpgradeCycle
+                if (typeof processUpgradeCycle === 'function') {
+                    await processUpgradeCycle.call(tempMerchantStrategy, merchant)
+                }
+                
+                console.log(`[MERCHANT-UPGRADE] ${merchant.name}: Upgrade cycle complete`)
+            } catch (e) {
+                console.error(`[MERCHANT-UPGRADE] ${merchant.name}: Error in upgrade cycle:`, e)
+            } finally {
+                upgradeState.upgradeCycleActive = false
+            }
+        }
+        
+        // Deliver upgraded items to party members (every 15 seconds)
+        if (now - upgradeState.lastDeliverUpgradesCheck > 15000) {
+            upgradeState.lastDeliverUpgradesCheck = now
+            
+            try {
+                console.log(`[MERCHANT-DELIVER] ${merchant.name}: Checking for items to deliver`)
+                
+                // Access protected method
+                const goDeliverUpgrades = (tempMerchantStrategy as any).goDeliverUpgrades
+                if (typeof goDeliverUpgrades === 'function') {
+                    await goDeliverUpgrades.call(tempMerchantStrategy, merchant)
+                }
+            } catch (e) {
+                console.error(`[MERCHANT-DELIVER] ${merchant.name}: Error delivering items:`, e)
+            }
+        }
+    } catch (e) {
+        console.error(`[MERCHANT] Error processing upgrades for ${merchantRecord.id}:`, e)
+    }
 }
 
 // ============================================================================
@@ -362,6 +490,14 @@ function startLogicLoop(): void {
                 } catch (xpError) {
                     console.error(`[XP-ERROR] Error in hunt ${huntId}:`, xpError)
                 }
+            }
+            
+            // Process merchant upgrades and deliveries
+            for (const [merchantId, merchantRecord] of state.merchants.merchants) {
+                if (!merchantRecord.enabled) continue
+                await processMerchantUpgrades(merchantRecord).catch(e => {
+                    console.error(`[MERCHANT] Error in upgrade loop for ${merchantId}:`, e)
+                })
             }
         } catch (e) {
             const errorMsg = String(e)

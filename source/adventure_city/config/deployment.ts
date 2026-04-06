@@ -211,7 +211,7 @@ export function createDefaultDeployment(): DeploymentConfig {
             {
                 id: "hunt_all_tests",
                 name: "All Tests Hunt",
-                monster: "greenfairy" as MonsterName,
+                monster: "bat" as MonsterName,
                 hunters: [
                     "test_1_1", "test_1_2", "test_1_3",
                     "test_2_1", "test_2_2", "test_2_3",
